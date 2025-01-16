@@ -1658,7 +1658,7 @@ export class Client extends GameShell {
             try {
                 for (let i: number = 0; i < 50; i++) {
                     if (i === 22) {
-                        // weird debug sprite along water
+                        // CUSTOM: skip debug sprite along water
                         continue;
                     }
 
@@ -5399,7 +5399,10 @@ export class Client extends GameShell {
                             this.redrawChatback = true;
                         }
                     } else if (this.chatInterfaceId === -1) {
-                        if (key >= 32 && key <= 122 && this.chatTyped.length < 80) {
+                        // CUSTOM: the original client checked `key <= 122`
+                        // preventing the user from typing a few special symbols -
+                        // since we have debugprocs, and they should be called using ::~, we allow a few more
+                        if (key >= 32 && key <= 126 && this.chatTyped.length < 80) {
                             this.chatTyped = this.chatTyped + String.fromCharCode(key);
                             this.redrawChatback = true;
                         }
