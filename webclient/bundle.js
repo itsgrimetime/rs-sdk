@@ -98,14 +98,23 @@ async function obfuscatorProdBuild(entry) {
         renameProperties: true,
         transformObjectKeys: true,
         reservedNames: [
-            '^Client$'
+            // entry point
+            '^Client$',
+            // deps (for some reason the obfuscator attempts these!)
+            'playWave',
+            'setWaveVolume',
+            'playMidi',
+            'stopMidi',
+            'setMidiVolume',
+            'BZip2',
+            'decompress'
         ],
         selfDefending: true,
         debugProtection: true,
         debugProtectionInterval: 2000,
         // less secure, but better UX (less lag):
-        simplify: false,
-        stringArray: false
+        // simplify: false,
+        // stringArray: false
     });
 
     return {
