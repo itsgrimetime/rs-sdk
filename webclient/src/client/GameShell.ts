@@ -411,7 +411,8 @@ export default abstract class GameShell {
             if (e.button === 2) {
                 this.mouseClickButton = 2;
                 this.mouseButton = 2;
-            } else {
+            } else if (e.button === 0) {
+                // custom: explicitly check left-mouse button so middle mouse is ignored
                 this.mouseClickButton = 1;
                 this.mouseButton = 1;
             }
