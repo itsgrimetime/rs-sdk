@@ -1,5 +1,5 @@
 import GameShell from '#/client/GameShell.ts';
-import Pix24 from '#/graphics/Pix24.ts';
+import Pix32 from '#/graphics/Pix32';
 import Pix2D from '#/graphics/Pix2D.ts';
 import Pix8 from '#/graphics/Pix8.ts';
 import PixFont from '#/graphics/PixFont.ts';
@@ -65,11 +65,11 @@ export class MapView extends GameShell {
     npcTiles: boolean[][] = [];
 
     imageMapscene: Pix8[] = [];
-    imageMapfunction: Pix24[] = [];
-    imageMapdot0: Pix24 | null = null;
-    imageMapdot1: Pix24 | null = null;
-    imageMapdot2: Pix24 | null = null;
-    imageMapdot3: Pix24 | null = null;
+    imageMapfunction: Pix32[] = [];
+    imageMapdot0: Pix32 | null = null;
+    imageMapdot1: Pix32 | null = null;
+    imageMapdot2: Pix32 | null = null;
+    imageMapdot3: Pix32 | null = null;
 
     b12: PixFont | null = null;
 
@@ -103,7 +103,7 @@ export class MapView extends GameShell {
     activeMapFunctions: Int32Array = new Int32Array(2000);
     activeMapFunctionCount: number = 0;
 
-    imageOverview: Pix24 | null = null;
+    imageOverview: Pix32 | null = null;
     imageOverviewHeight: number = 200;
     imageOverviewWidth: number = ((this.imageOverviewHeight * this.sizeX) / this.sizeZ) | 0;
     overviewX: number = 635 - this.imageOverviewWidth - 5;
@@ -193,7 +193,7 @@ export class MapView extends GameShell {
 
         const worldmap: Jagfile = await this.loadWorldmap();
 
-        await this.showProgress(100, 'Please wait... Rendering Map');
+        await this.drawProgress(100, 'Please wait... Rendering Map');
 
         const labelData: Packet = new Packet(worldmap.read('labels.dat'));
         this.labelCount = labelData.g2();
@@ -244,16 +244,16 @@ export class MapView extends GameShell {
 
         try {
             for (let i: number = 0; i < 50; i++) {
-                this.imageMapfunction[i] = Pix24.fromArchive(worldmap, 'mapfunction', i);
+                this.imageMapfunction[i] = Pix32.fromArchive(worldmap, 'mapfunction', i);
             }
         } catch (ignore) {
             // empty
         }
 
-        this.imageMapdot0 = Pix24.fromArchive(worldmap, 'mapdots', 0);
-        this.imageMapdot1 = Pix24.fromArchive(worldmap, 'mapdots', 1);
-        this.imageMapdot2 = Pix24.fromArchive(worldmap, 'mapdots', 2);
-        this.imageMapdot3 = Pix24.fromArchive(worldmap, 'mapdots', 3);
+        this.imageMapdot0 = Pix32.fromArchive(worldmap, 'mapdots', 0);
+        this.imageMapdot1 = Pix32.fromArchive(worldmap, 'mapdots', 1);
+        this.imageMapdot2 = Pix32.fromArchive(worldmap, 'mapdots', 2);
+        this.imageMapdot3 = Pix32.fromArchive(worldmap, 'mapdots', 3);
 
         this.b12 = PixFont.fromArchive(worldmap, 'b12');
         // this.f11 = new WorldmapFont(11, true, this);
@@ -269,7 +269,7 @@ export class MapView extends GameShell {
         this.averageUnderlayColors();
         if (this.shouldClearEmptyTiles) this.clearEmptyTiles();
 
-        this.imageOverview = new Pix24(this.imageOverviewWidth, this.imageOverviewHeight);
+        this.imageOverview = new Pix32(this.imageOverviewWidth, this.imageOverviewHeight);
         this.imageOverview.bind();
         this.drawMap(0, 0, this.sizeX, this.sizeZ, 0, 0, this.imageOverviewWidth, this.imageOverviewHeight);
         Pix2D.drawRect(0, 0, this.imageOverviewWidth, this.imageOverviewHeight, 0);
@@ -605,14 +605,14 @@ export class MapView extends GameShell {
 
         let retry: number = 5;
         while (!data) {
-            await this.showProgress(0, 'Requesting map');
+            await this.drawProgress(0, 'Requesting map');
 
             try {
                 data = await downloadUrl('/worldmap.jag');
             } catch (e) {
                 data = undefined;
                 for (let i: number = retry; i > 0; i--) {
-                    await this.showProgress(0, `Error loading - Will retry in ${i} secs.`);
+                    await this.drawProgress(0, `Error loading - Will retry in ${i} secs.`);
                     await sleep(1000);
                 }
 

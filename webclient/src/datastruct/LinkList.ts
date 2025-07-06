@@ -2,19 +2,18 @@ import Linkable from './Linkable';
 
 export default class LinkList {
     private readonly sentinel: Linkable = new Linkable();
-
-    // runtime
-    private current: Linkable | null = null;
+    private cursor: Linkable | null = null;
 
     constructor() {
         this.sentinel.next = this.sentinel;
         this.sentinel.prev = this.sentinel;
     }
 
-    addTail(node: Linkable): void {
+    push(node: Linkable): void {
         if (node.prev) {
             node.unlink();
         }
+
         node.prev = this.sentinel.prev;
         node.next = this.sentinel;
         if (node.prev) {
@@ -27,6 +26,7 @@ export default class LinkList {
         if (node.prev) {
             node.unlink();
         }
+
         node.prev = this.sentinel;
         node.next = this.sentinel.next;
         node.prev.next = node;
@@ -35,11 +35,12 @@ export default class LinkList {
         }
     }
 
-    removeHead(): Linkable | null {
+    pop(): Linkable | null {
         const node: Linkable | null = this.sentinel.next;
         if (node === this.sentinel) {
             return null;
         }
+
         node?.unlink();
         return node;
     }
@@ -47,40 +48,44 @@ export default class LinkList {
     head(): Linkable | null {
         const node: Linkable | null = this.sentinel.next;
         if (node === this.sentinel) {
-            this.current = null;
+            this.cursor = null;
             return null;
         }
-        this.current = node?.next || null;
+
+        this.cursor = node?.next || null;
         return node;
     }
 
     tail(): Linkable | null {
         const node: Linkable | null = this.sentinel.prev;
         if (node === this.sentinel) {
-            this.current = null;
+            this.cursor = null;
             return null;
         }
-        this.current = node?.prev || null;
+
+        this.cursor = node?.prev || null;
         return node;
     }
 
     next(): Linkable | null {
-        const node: Linkable | null = this.current;
+        const node: Linkable | null = this.cursor;
         if (node === this.sentinel) {
-            this.current = null;
+            this.cursor = null;
             return null;
         }
-        this.current = node?.next || null;
+
+        this.cursor = node?.next || null;
         return node;
     }
 
     prev(): Linkable | null {
-        const node: Linkable | null = this.current;
+        const node: Linkable | null = this.cursor;
         if (node === this.sentinel) {
-            this.current = null;
+            this.cursor = null;
             return null;
         }
-        this.current = node?.prev || null;
+
+        this.cursor = node?.prev || null;
         return node;
     }
 
@@ -91,6 +96,7 @@ export default class LinkList {
             if (node === this.sentinel) {
                 return;
             }
+
             node?.unlink();
         }
     }

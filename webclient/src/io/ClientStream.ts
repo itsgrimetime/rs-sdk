@@ -55,6 +55,7 @@ export default class ClientStream {
         if (this.closed) {
             return;
         }
+
         await this.wsin.readBytes(dst, off, len);
     }
 

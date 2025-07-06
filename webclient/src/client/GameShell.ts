@@ -8,36 +8,43 @@ import { CanvasEnabledKeys, KeyCodes } from '#/client/KeyCodes.js';
 import InputTracking from '#/client/InputTracking.js';
 
 export default abstract class GameShell {
-    protected slowestMS: number = 0.0; // custom
-    protected averageMS: number[] = []; // custom
-    protected averageIndexMS: number = 0; // custom
-
-    protected drawArea: PixMap | null = null;
     protected state: number = 0;
     protected deltime: number = 20;
     protected mindel: number = 1;
-    protected otim: number[] = [];
+    protected otim: number[] = new Array(10);
     protected fps: number = 0;
-    protected fpos: number = 0;
-    protected frameTime: number[] = [];
+    protected debug: boolean = false;
+    protected drawArea: PixMap | null = null;
     protected redrawScreen: boolean = true;
-    protected resizeToFit: boolean = false;
-    protected tfps: number = 50; // custom
-    protected hasFocus: boolean = true; // mapview applet
+    protected hasFocus: boolean = true;
 
-    protected ingame: boolean = false;
+    public idleCycles: number = Date.now();
+    public mouseButton: number = 0;
+    public mouseX: number = -1;
+    public mouseY: number = -1;
+    protected lastMouseClickButton: number = 0;
+    protected lastMouseClickX: number = 0;
+    protected lastMouseClickY: number = 0;
+    public mouseClickButton: number = 0;
+    public mouseClickX: number = -1;
+    public mouseClickY: number = -1;
+    protected lastMouseClickTime: number = 0;
+    public mouseClickTime: number = 0;
 
-    protected idleCycles: number = Date.now();
-    protected mouseButton: number = 0;
-    protected mouseX: number = -1;
-    protected mouseY: number = -1;
-    protected mouseClickButton: number = 0;
-    protected mouseClickX: number = -1;
-    protected mouseClickY: number = -1;
-    protected actionKey: number[] = [];
+    public actionKey: number[] = [];
     protected keyQueue: number[] = [];
     protected keyQueueReadPos: number = 0;
     protected keyQueueWritePos: number = 0;
+
+    // custom
+    protected slowestMS: number = 0.0;
+    protected averageMS: number[] = [];
+    protected averageIndexMS: number = 0;
+    protected resizeToFit: boolean = false;
+    protected tfps: number = 50;
+    protected fpos: number = 0;
+    protected frameTime: number[] = [];
+    protected ingame: boolean = false;
 
     // touch controls
     private input: HTMLElement | null = null;
@@ -68,6 +75,7 @@ export default abstract class GameShell {
         canvas.tabIndex = -1;
         canvas2d.fillStyle = 'black';
         canvas2d.fillRect(0, 0, canvas.width, canvas.height);
+
         this.resizeToFit = resizetoFit;
         if (this.resizeToFit) {
             this.resize(window.innerWidth, window.innerHeight);
@@ -130,18 +138,18 @@ export default abstract class GameShell {
             e.preventDefault();
         };
 
-        await this.showProgress(0, 'Loading...');
+        await this.drawProgress(0, 'Loading...');
         await this.load();
 
-        for (let i: number = 0; i < 10; i++) {
-            this.otim[i] = performance.now();
-        }
-
-        let ntime: number;
+        let ntime: number = 0;
         let opos: number = 0;
         let ratio: number = 256;
         let delta: number = 1;
         let count: number = 0;
+
+        for (let i: number = 0; i < 10; i++) {
+            this.otim[i] = performance.now();
+        }
 
         while (this.state >= 0) {
             if (this.state > 0) {
@@ -155,12 +163,13 @@ export default abstract class GameShell {
 
             const lastRatio: number = ratio;
             const lastDelta: number = delta;
+
             ratio = 300;
             delta = 1;
 
             ntime = performance.now();
-            const otim: number = this.otim[opos];
 
+            const otim: number = this.otim[opos];
             if (otim === 0) {
                 ratio = lastRatio;
                 delta = lastDelta;
@@ -193,23 +202,28 @@ export default abstract class GameShell {
             await sleep(delta);
 
             while (count < 256) {
+                this.mouseClickButton = this.lastMouseClickButton;
+                this.mouseClickX = this.lastMouseClickX;
+                this.mouseClickY = this.lastMouseClickY;
+                this.mouseClickTime = this.lastMouseClickTime;
+                this.lastMouseClickButton = 0;
+
                 await this.update();
-                this.mouseClickButton = 0;
+
                 this.keyQueueReadPos = this.keyQueueWritePos;
                 count += ratio;
             }
-
             count &= 0xff;
 
             if (this.deltime > 0) {
                 this.fps = ((ratio * 1000) / (this.deltime * 256)) | 0;
             }
 
-            const time: number = performance.now();
+            const start: number = performance.now();
 
             await this.draw();
 
-            this.frameTime[this.fpos] = (performance.now() - time) / 1000;
+            this.frameTime[this.fpos] = (performance.now() - start) / 1000;
             this.fpos = (this.fpos + 1) % this.frameTime.length;
 
             // this is custom for targeting specific fps (on mobile).
@@ -219,7 +233,20 @@ export default abstract class GameShell {
                     await sleep(tfps);
                 }
             }
+
+            if (this.debug) {
+                console.log('ntime:' + ntime);
+                for (let i = 0; i < 10; i++) {
+                    let o = (opos - i - 1 + 20) % 10;
+                    console.log('otim' + o + ':' + this.otim[o]);
+                }
+                console.log('fps:' + this.fps + ' ratio:' + ratio + ' count:' + count);
+                console.log('del:' + delta + ' deltime:' + this.deltime + ' mindel:' + this.mindel);
+                console.log('opos:' + opos);
+                this.debug = false;
+            }
         }
+
         if (this.state === -1) {
             this.shutdown();
         }
@@ -249,11 +276,7 @@ export default abstract class GameShell {
         }
     }
 
-    protected destroy() {
-        this.state = -1;
-    }
-
-    protected async showProgress(progress: number, message: string): Promise<void> {
+    protected async drawProgress(progress: number, message: string): Promise<void> {
         const width: number = this.width;
         const height: number = this.height;
 
@@ -339,7 +362,7 @@ export default abstract class GameShell {
             this.keyQueueWritePos = (this.keyQueueWritePos + 1) & 0x7f;
         }
 
-        if (InputTracking.trackingActive) {
+        if (InputTracking.enabled) {
             InputTracking.keyPressed(ch);
         }
 
@@ -370,7 +393,7 @@ export default abstract class GameShell {
             this.actionKey[ch] = 0;
         }
 
-        if (InputTracking.trackingActive) {
+        if (InputTracking.enabled) {
             InputTracking.keyReleased(ch);
         }
 
@@ -386,46 +409,48 @@ export default abstract class GameShell {
         if (e.clientX > 0 || e.clientY > 0) this.setMousePosition(e);
 
         this.idleCycles = Date.now();
-        this.mouseClickX = this.mouseX;
-        this.mouseClickY = this.mouseY;
+        this.lastMouseClickX = this.mouseX;
+        this.lastMouseClickY = this.mouseY;
+        this.lastMouseClickTime = Date.now();
 
         if (this.isMobile && !this.isCapacitor) {
             if (this.insideMobileInputArea() && !this.insideChatPopupArea()) {
-                this.mouseClickButton = 1;
+                this.lastMouseClickButton = 1;
                 this.mouseButton = 1;
                 return;
             }
 
             const eventTime: number = e.timeStamp;
             if (eventTime >= this.time + 500) {
-                this.mouseClickButton = 2;
+                this.lastMouseClickButton = 2;
                 this.mouseButton = 2;
             } else {
-                this.mouseClickButton = 1;
+                this.lastMouseClickButton = 1;
                 this.mouseButton = 1;
             }
         } else {
             if (e.button === 2) {
-                this.mouseClickButton = 2;
+                this.lastMouseClickButton = 2;
                 this.mouseButton = 2;
             } else if (e.button === 0) {
                 // custom: explicitly check left-mouse button so middle mouse is ignored
-                this.mouseClickButton = 1;
+                this.lastMouseClickButton = 1;
                 this.mouseButton = 1;
             }
         }
 
-        if (InputTracking.trackingActive) {
-            InputTracking.mousePressed(this.mouseClickX, this.mouseClickY, e.button);
+        if (InputTracking.enabled) {
+            InputTracking.mousePressed(this.lastMouseClickX, this.lastMouseClickY, e.button);
         }
     }
 
     private onmouseup(e: MouseEvent) {
         this.setMousePosition(e);
+
         this.idleCycles = Date.now();
         this.mouseButton = 0;
 
-        if (InputTracking.trackingActive) {
+        if (InputTracking.enabled) {
             InputTracking.mouseReleased(e.button);
         }
     }
@@ -433,7 +458,7 @@ export default abstract class GameShell {
     private onmouseenter(e: MouseEvent) {
         this.setMousePosition(e);
 
-        if (InputTracking.trackingActive) {
+        if (InputTracking.enabled) {
             InputTracking.mouseEntered();
         }
     }
@@ -441,7 +466,6 @@ export default abstract class GameShell {
     private onmouseleave(e: MouseEvent) {
         this.setMousePosition(e);
 
-        // mapview applet
         this.idleCycles = Date.now();
         this.mouseX = -1;
         this.mouseY = -1;
@@ -451,7 +475,7 @@ export default abstract class GameShell {
         this.mouseClickX = -1;
         this.mouseClickY = -1;
 
-        if (InputTracking.trackingActive) {
+        if (InputTracking.enabled) {
             InputTracking.mouseExited();
         }
     }
@@ -461,7 +485,7 @@ export default abstract class GameShell {
 
         this.idleCycles = Date.now();
 
-        if (InputTracking.trackingActive) {
+        if (InputTracking.enabled) {
             InputTracking.mouseMoved(this.mouseX, this.mouseY);
         }
     }
@@ -471,7 +495,7 @@ export default abstract class GameShell {
         this.redrawScreen = true;
         this.refresh();
 
-        if (InputTracking.trackingActive) {
+        if (InputTracking.enabled) {
             InputTracking.focusGained();
         }
     }
@@ -484,7 +508,7 @@ export default abstract class GameShell {
             this.actionKey[i] = 0;
         }
 
-        if (InputTracking.trackingActive) {
+        if (InputTracking.enabled) {
             InputTracking.focusLost();
         }
     }

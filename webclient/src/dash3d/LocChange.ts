@@ -1,6 +1,6 @@
 import Linkable from '#/datastruct/Linkable.js';
 
-export default class LocAdd extends Linkable {
+export default class LocChange extends Linkable {
     duration: number = -1;
 
     locIndex: number = 0;

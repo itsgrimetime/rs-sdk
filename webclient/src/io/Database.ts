@@ -28,6 +28,27 @@ export default class Database {
         });
     }
 
+    async read(archive: number, file: number) {
+        return await new Promise<Uint8Array | undefined>((resolve): void => {
+            const transaction: IDBTransaction = this.db.transaction('cache', 'readonly');
+            const store: IDBObjectStore = transaction.objectStore('cache');
+            const request: IDBRequest<Uint8Array> = store.get(`${archive}.${file}`);
+
+            request.onsuccess = (): void => {
+                if (request.result) {
+                    resolve(new Uint8Array(request.result));
+                } else {
+                    // IDB will call onsuccess with "undefined" if key does not exist
+                    resolve(undefined);
+                }
+            };
+
+            request.onerror = (): void => {
+                resolve(undefined);
+            };
+        });
+    }
+
     async cacheload(name: string) {
         return await new Promise<Uint8Array | undefined>((resolve): void => {
             const transaction: IDBTransaction = this.db.transaction('cache', 'readonly');
@@ -45,6 +66,27 @@ export default class Database {
 
             request.onerror = (): void => {
                 resolve(undefined);
+            };
+        });
+    }
+
+    async write(archive: number, file: number, src: Uint8Array | Int8Array | null) {
+        if (src === null) {
+            return;
+        }
+
+        return await new Promise<void>((resolve, reject): void => {
+            const transaction: IDBTransaction = this.db.transaction('cache', 'readwrite');
+            const store: IDBObjectStore = transaction.objectStore('cache');
+            const request: IDBRequest<IDBValidKey> = store.put(src, `${archive}.${file}`);
+
+            request.onsuccess = (): void => {
+                resolve();
+            };
+
+            request.onerror = (): void => {
+                // not too worried if it doesn't save, it'll redownload later
+                resolve();
             };
         });
     }

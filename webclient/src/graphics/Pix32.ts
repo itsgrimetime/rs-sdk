@@ -7,7 +7,7 @@ import Pix8 from '#/graphics/Pix8.js';
 import Jagfile from '#/io/Jagfile.js';
 import Packet from '#/io/Packet.js';
 
-export default class Pix24 extends DoublyLinkable {
+export default class Pix32 extends DoublyLinkable {
     readonly pixels: Int32Array;
     readonly width2d: number;
     readonly height2d: number;
@@ -24,13 +24,13 @@ export default class Pix24 extends DoublyLinkable {
         this.cropX = this.cropY = 0;
     }
 
-    static async fromJpeg(archive: Jagfile, name: string): Promise<Pix24> {
+    static async fromJpeg(archive: Jagfile, name: string): Promise<Pix32> {
         const dat: Uint8Array | null = archive.read(name + '.dat');
         if (!dat) {
             throw new Error();
         }
         const jpeg: ImageData = await decodeJpeg(dat);
-        const image: Pix24 = new Pix24(jpeg.width, jpeg.height);
+        const image: Pix32 = new Pix32(jpeg.width, jpeg.height);
 
         const data: Uint32Array = new Uint32Array(jpeg.data.buffer);
         const pixels: Int32Array = image.pixels;
@@ -41,7 +41,7 @@ export default class Pix24 extends DoublyLinkable {
         return image;
     }
 
-    static fromArchive(archive: Jagfile, name: string, sprite: number = 0): Pix24 {
+    static fromArchive(archive: Jagfile, name: string, sprite: number = 0): Pix32 {
         const dat: Packet = new Packet(archive.read(name + '.dat'));
         const index: Packet = new Packet(archive.read('index.dat'));
 
@@ -81,7 +81,7 @@ export default class Pix24 extends DoublyLinkable {
         const width: number = index.g2();
         const height: number = index.g2();
 
-        const image: Pix24 = new Pix24(width, height);
+        const image: Pix32 = new Pix32(width, height);
         image.cropX = cropX;
         image.cropY = cropY;
         image.cropW = cropW;
