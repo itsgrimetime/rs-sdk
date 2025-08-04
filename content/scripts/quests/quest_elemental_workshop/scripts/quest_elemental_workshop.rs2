@@ -35,21 +35,21 @@ mes("You can't unlock the door with that.");
 
 [oploc1,elemental_workshop_spiralstairstop]
 p_teleport(0_42_154_28_32);
+// https://youtu.be/3_KOiy-ZK4c?si=FYslHGEOo-ZF5cTB&t=82
 if(testbit(%elemental_workshop_bits, ^elemental_workshop_entered) = ^false) {
     %elemental_workshop_bits = setbit(%elemental_workshop_bits, ^elemental_workshop_entered);
-    ~chatplayer("<p,neutral>Now to explore this area thoroughly, to find what forgotten secrets it contains.");
 }
 
 [oploc1,elemental_workshop_spiralstairs]
 p_teleport(0_42_54_21_41);
 
 [oploc1,elemental_workshop_box_1]
-if(inv_total(inv, leather) > 0 | testbit(%elemental_workshop_bits, ^elemental_workshop_leather_found) = ^true) {
-    @elemental_workshop_box_empty;
+if(inv_total(inv, elemental_workshop_lava_bowl) = 0) {
+    inv_add(inv, elemental_workshop_lava_bowl, 1);
+    mes("You find a stone bowl.");
+    return;
 }
-inv_add(inv, leather, 1);
-mes("You find some leather.");
-%elemental_workshop_bits = setbit(%elemental_workshop_bits, ^elemental_workshop_leather_found);
+@elemental_workshop_box_empty;
 
 [oploc1,elemental_workshop_box_2]
 if(inv_total(inv, needle) > 0 | testbit(%elemental_workshop_bits, ^elemental_workshop_needle_found) = ^true) {
@@ -60,12 +60,12 @@ mes("You find a needle.");
 %elemental_workshop_bits = setbit(%elemental_workshop_bits, ^elemental_workshop_leather_found);
 
 [oploc1,elemental_workshop_box_4]
-if(inv_total(inv, elemental_workshop_lava_bowl) = 0) {
-    inv_add(inv, elemental_workshop_lava_bowl, 1);
-    mes("You find a stone bowl.");
-    return;
+if(inv_total(inv, leather) > 0 | testbit(%elemental_workshop_bits, ^elemental_workshop_leather_found) = ^true) {
+    @elemental_workshop_box_empty;
 }
-@elemental_workshop_box_empty;
+inv_add(inv, leather, 1);
+mes("You find some leather.");
+%elemental_workshop_bits = setbit(%elemental_workshop_bits, ^elemental_workshop_leather_found);
 
 [oploc1,elemental_workshop_box_3] @elemental_workshop_box_empty;
 [oploc1,elemental_workshop_box_5] @elemental_workshop_box_empty;
@@ -82,7 +82,6 @@ if(testbit(%elemental_workshop_bits, ^elemental_workshop_water_flowing) = ^true)
     return;
 }
 mes("You turn the handle.");
-anim(human_pickuptable, 0); // guess
 if(testbit(%elemental_workshop_bits, ^elemental_workshop_water_controls_left) = ^false) { // cant toggle this side if left side is on
     %elemental_workshop_bits = togglebit(%elemental_workshop_bits, ^elemental_workshop_water_controls_right);
 }
@@ -91,7 +90,6 @@ if(testbit(%elemental_workshop_bits, ^elemental_workshop_water_flowing) = ^true)
 } else {
     sound_synth(squeaky_valve, 0, 0);
 }
-p_delay(0);
 
 [oploc1,elemental_workshop_valve_2]
 if(testbit(%elemental_workshop_bits, ^elemental_workshop_water_flowing) = ^true) {
@@ -99,14 +97,12 @@ if(testbit(%elemental_workshop_bits, ^elemental_workshop_water_flowing) = ^true)
     return;
 }
 mes("You turn the handle.");
-anim(human_pickuptable, 0); // guess
 %elemental_workshop_bits = togglebit(%elemental_workshop_bits, ^elemental_workshop_water_controls_left);
 if(testbit(%elemental_workshop_bits, ^elemental_workshop_water_flowing) = ^true) {
     sound_synth(squeaky_valve_gush, 0, 0);
 } else {
     sound_synth(squeaky_valve, 0, 0);
 }
-p_delay(0);
 
 [oploc1,elemental_workshop_water_lever]
 mes("You pull the lever.");
@@ -121,6 +117,11 @@ if(testbit(%elemental_workshop_bits, ^elemental_workshop_water_flowing) = ^true)
 if(getbit_range(%elemental_workshop_bits, ^elemental_workshop_water_controls_left, ^elemental_workshop_water_controls_right) = 3) {
     %elemental_workshop_bits = setbit(%elemental_workshop_bits, ^elemental_workshop_water_flowing);
     mes("You hear the sound of a water wheel starting up.");
+    if(loc_find(0_42_154_31_51, elemental_wheel) = true) {
+        loc_anim(elemental_wheel_spin);
+        loc_add(0_42_154_34_51, loc_2016, 2, centrepiece_straight, 4);
+        loc_add(0_42_154_30_51, loc_2018, 0, centrepiece_straight, 4);
+    }
     sound_synth(water_wheel_start, 0, 0);
     return;
 }
@@ -139,6 +140,8 @@ if(testbit(%elemental_workshop_bits, ^elemental_workshop_air_blowing) = ^true) {
 }
 if(getbit_range(%elemental_workshop_bits, ^elemental_workshop_water_flowing, ^elemental_workshop_bellows_repaired) = 3) {
     %elemental_workshop_bits = setbit(%elemental_workshop_bits, ^elemental_workshop_air_blowing);
+    if(loc_find(0_42_154_46_26, elemental_workshop_bellows_l) = true) loc_anim(elemental_bellow_pump);
+    if(loc_find(0_42_154_48_26, elemental_workshop_bellows_r) = true) loc_anim(elemental_bellow_pump_reverse);
     mes("The bellows pump air down the pipe.");
     return;
 }
@@ -195,18 +198,17 @@ while (npc_huntnext = true) {
         return;
     }
 }
-npc_add(map_findsquare(coord, 1, 2, 0), earth_elemental_rock_version, 500);
-npc_anim(elemental_earth_summon, 0);
-npc_say("Grr... Ge'roff us!");
+// https://youtu.be/3_KOiy-ZK4c?si=zQRMQfSuG55co48y&t=312 1t delay before spawning when he arrives, no delay when clicking again in op dist
+p_arrivedelay;
+npc_add(coord, earth_elemental_rock_version, 500);
+npc_say("Grr... Ge'roff my rock!");
 ~npc_retaliate(0);
 p_delay(1);
 
 [oplocu,elemental_workshop_furnace]
 def_obj $last_useitem = last_useitem;
-p_teleport(0_42_154_36_19);
-p_delay(1);
 if($last_useitem = elemental_workshop_lava_bowl_full) {
-    mes("You empty the lava into the furnace.");
+    mes("You empty the lava in the furnace.");
     inv_del(inv, elemental_workshop_lava_bowl_full, 1);
     inv_add(inv, elemental_workshop_lava_bowl, 1);
     p_delay(4);
@@ -214,7 +216,7 @@ if($last_useitem = elemental_workshop_lava_bowl_full) {
         mes("The lava makes little difference to the furnace's searing heat.");
         return;
     }
-    mes("The furnace bursts to life.");
+    mes("The furnace bursts in to life.");
     %elemental_workshop_bits = setbit(%elemental_workshop_bits, ^elemental_workshop_furnace_lit);
 }
 if(testbit(%elemental_workshop_bits, ^elemental_workshop_furnace_lit) = ^false) {
@@ -231,13 +233,14 @@ if($last_useitem = elemental_workshop_ore) {
         return;
     }
     mes("You place the elemental ore and four heaps of coal into the furnace.");
+    inv_del(inv, elemental_workshop_ore, 1);
+    inv_del(inv, coal, 4);
     anim(human_furnace, 0);
     p_delay(3);
     stat_advance(smithing, 80);
-    inv_del(inv, elemental_workshop_ore, 1);
-    inv_del(inv, coal, 4);
     inv_add(inv, elemental_workshop_bar, 1);
     mes("You retrieve a bar of elemental metal.");
+    mes("The furnace is so hot it will destroy almost anything put in it."); // todo: does this mean anything functionally?
 }
 
 [oplocu,elemental_workshop_workbench]
@@ -254,7 +257,8 @@ if(last_useitem = elemental_workshop_bar) {
         ~mesbox("This workbench is too complicated. You need instructions to follow.");
         return;
     }
-    mes("Following the instructions in the book, you make an elemental shield.");
+    // https://youtu.be/3_KOiy-ZK4c?si=iMaWOSMTw2ZrjG4r&t=429
+    mes("You make an Elemental Shield.");
     inv_del(inv, elemental_workshop_bar, 1);
     anim(human_cooking, 0);
     p_delay(3);
