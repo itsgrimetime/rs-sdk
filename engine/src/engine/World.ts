@@ -116,7 +116,7 @@ class World {
     private static readonly PLAYERS: number = Environment.NODE_MAX_PLAYERS;
     private static readonly NPCS: number = Environment.NODE_MAX_NPCS;
 
-    private static readonly TICKRATE: number = 600; // 0.6s / 600ms
+    private static readonly TICKRATE: number = 420; // 0.42s / 420ms (30% faster than original 600ms)
 
     private static readonly INV_STOCKRATE: number = 100; // 1m
     private static readonly AFK_EVENTRATE: number = 500; // 5m
@@ -892,19 +892,18 @@ class World {
                 }
             }
 
-            // player already logged in
+            // player already logged in - kick the existing session and allow the new login
             for (const other of this.players) {
                 if (player.username !== other.username) {
                     continue;
                 }
 
                 if (player instanceof NetworkPlayer) {
-                    player.addSessionLog(LoggerEventType.ENGINE, 'Tried to log in - already logged in');
-                    player.client.send(Uint8Array.from([5]));
-                    player.client.close();
+                    player.addSessionLog(LoggerEventType.ENGINE, 'Kicking existing session to allow new login');
                 }
-
-                continue player;
+                other.addSessionLog(LoggerEventType.ENGINE, 'Kicked due to login from another session');
+                this.removePlayer(other);
+                break;
             }
 
             // prevent logging in when the server is shutting down

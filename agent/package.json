@@ -1,0 +1,25 @@
+{
+  "name": "bot-agent",
+  "version": "1.0.0",
+  "type": "module",
+  "bin": {
+    "rsbot": "./cli.ts"
+  },
+  "scripts": {
+    "start": "bun run rsbot-agent.ts",
+    "dev": "bun run --watch rsbot-agent.ts",
+    "sync": "bun run sync.ts",
+    "sync:dev": "bun run --watch sync.ts",
+    "cli": "bun run cli.ts",
+    "login": "bun run login.ts",
+    "controller": "bun run agent-controller.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.14",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "puppeteer": "^24.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

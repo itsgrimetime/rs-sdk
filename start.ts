@@ -254,8 +254,13 @@ async function promptAdvanced() {
             cwd: 'webclient'
         });
 
-        fs.copyFileSync('webclient/out/client.js', 'engine/public/client/client.js');
-        fs.copyFileSync('webclient/out/deps.js', 'engine/public/client/deps.js');
+        // Copy standard client (for root path)
+        fs.copyFileSync('webclient/out/standard/client.js', 'engine/public/client/client.js');
+        fs.copyFileSync('webclient/out/standard/deps.js', 'engine/public/client/deps.js');
+
+        // Copy bot client (for /bot path)
+        fs.copyFileSync('webclient/out/bot/client.js', 'engine/public/bot/client.js');
+        fs.copyFileSync('webclient/out/bot/deps.js', 'engine/public/bot/deps.js');
     } else if (choice === 'build-java') {
         const command = process.platform === 'win32' ? 'gradlew' : './gradlew';
         child_process.execSync(`${command} build`, {
