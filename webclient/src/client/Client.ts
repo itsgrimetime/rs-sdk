@@ -67,6 +67,14 @@ import Wave from '#/sound/Wave.js';
 import OnDemand from '#/io/OnDemand.js';
 import MobileKeyboard from '#/client/MobileKeyboard.js';
 
+// Bot SDK is conditionally included based on build flag
+declare const process: { env: { ENABLE_BOT_SDK?: string } };
+const ENABLE_BOT_SDK = process.env.ENABLE_BOT_SDK === 'true';
+
+// Conditional Bot SDK import - will be tree-shaken in standard build
+import * as BotSDKModule from '#/bot/BotSDK.js';
+const BotOverlay = ENABLE_BOT_SDK ? BotSDKModule.BotOverlay : null;
+
 const enum Constants {
     CLIENT_VERSION = 245,
     MAX_CHATS = 50,
@@ -488,6 +496,9 @@ export class Client extends GameShell {
 
     private displayFps: boolean = false;
 
+    // Bot SDK overlay for bot development (dynamically loaded when enabled)
+    private botOverlay: InstanceType<typeof import('#/bot/BotSDK.js').BotOverlay> | null = null;
+
     private onDemand: OnDemand | null = null;
     ingame: boolean = false;
     imageModIcons: Pix8[] = [];
@@ -538,6 +549,1299 @@ export class Client extends GameShell {
 
         this.run();
     }
+
+    // === BOT SDK PUBLIC METHODS ===
+
+    // Packet logging for debugging
+    private packetLog: Array<{ timestamp: number; opcode: number; name: string; size: number; data: string }> = [];
+    private packetLogEnabled: boolean = false;
+    private packetLogCallback: ((entry: { timestamp: number; opcode: number; name: string; size: number; data: string }) => void) | null = null;
+    private static readonly PACKET_NAMES: { [key: number]: string } = {
+        206: 'NO_TIMEOUT', 102: 'IDLE_TIMER', 19: 'EVENT_TRACKING',
+        113: 'OPOBJ1', 238: 'OPOBJ2', 55: 'OPOBJ3', 17: 'OPOBJ4', 247: 'OPOBJ5', 122: 'OPOBJT', 143: 'OPOBJU',
+        180: 'OPNPC1', 252: 'OPNPC2', 196: 'OPNPC3', 107: 'OPNPC4', 43: 'OPNPC5', 141: 'OPNPCT', 14: 'OPNPCU',
+        1: 'OPLOC1', 219: 'OPLOC2', 226: 'OPLOC3', 204: 'OPLOC4', 86: 'OPLOC5', 208: 'OPLOCT', 147: 'OPLOCU',
+        135: 'OPPLAYER1', 165: 'OPPLAYER2', 172: 'OPPLAYER3', 54: 'OPPLAYER4', 52: 'OPPLAYERT', 210: 'OPPLAYERU',
+        104: 'OPHELD1', 193: 'OPHELD2', 115: 'OPHELD3', 194: 'OPHELD4', 9: 'OPHELD5', 188: 'OPHELDT', 126: 'OPHELDU',
+        13: 'INV_BUTTON1', 58: 'INV_BUTTON2', 48: 'INV_BUTTON3', 183: 'INV_BUTTON4', 242: 'INV_BUTTON5',
+        177: 'IF_BUTTON', 239: 'RESUME_PAUSEBUTTON', 245: 'CLOSE_MODAL', 241: 'RESUME_P_COUNTDIALOG', 243: 'TUTORIAL_CLICKSIDE',
+        216: 'MOVE_OPCLICK', 205: 'REPORT_ABUSE', 198: 'MOVE_MINIMAPCLICK', 7: 'INV_BUTTOND',
+        4: 'IGNORELIST_DEL', 20: 'IGNORELIST_ADD', 150: 'IF_PLAYERDESIGN', 8: 'CHAT_SETMODE',
+        99: 'MESSAGE_PRIVATE', 61: 'FRIENDLIST_DEL', 116: 'FRIENDLIST_ADD', 11: 'CLIENT_CHEAT',
+        78: 'MESSAGE_PUBLIC', 182: 'MOVE_GAMECLICK'
+    };
+
+    /**
+     * Enable or disable packet logging
+     */
+    setPacketLogging(enabled: boolean): void {
+        this.packetLogEnabled = enabled;
+    }
+
+    /**
+     * Check if packet logging is enabled
+     */
+    isPacketLoggingEnabled(): boolean {
+        return this.packetLogEnabled;
+    }
+
+    /**
+     * Get all logged packets
+     */
+    getPacketLog(): Array<{ timestamp: number; opcode: number; name: string; size: number; data: string }> {
+        return [...this.packetLog];
+    }
+
+    /**
+     * Clear the packet log
+     */
+    clearPacketLog(): void {
+        this.packetLog = [];
+    }
+
+    /**
+     * Set a callback for when packets are logged (for real-time UI updates)
+     */
+    setPacketLogCallback(callback: ((entry: { timestamp: number; opcode: number; name: string; size: number; data: string }) => void) | null): void {
+        this.packetLogCallback = callback;
+    }
+
+    /**
+     * Internal method to log a packet
+     */
+    private logPacket(opcode: number, dataBytes: number[]): void {
+        if (!this.packetLogEnabled) return;
+
+        const name = Client.PACKET_NAMES[opcode] || `UNKNOWN_${opcode}`;
+
+        // Convert packet data to hex string
+        const hexData = dataBytes.map(b => b.toString(16).padStart(2, '0')).join(' ');
+
+        const entry = {
+            timestamp: Date.now(),
+            opcode,
+            name,
+            size: dataBytes.length,
+            data: hexData
+        };
+
+        this.packetLog.push(entry);
+
+        // Keep log size reasonable
+        if (this.packetLog.length > 500) {
+            this.packetLog = this.packetLog.slice(-250);
+        }
+
+        // Call the callback if set
+        if (this.packetLogCallback) {
+            this.packetLogCallback(entry);
+        }
+    }
+
+    // Track current packet being built for logging
+    private currentPacketOpcode: number = -1;
+    private currentPacketStart: number = 0;
+
+    /**
+     * Write a packet opcode with logging support
+     * Use this instead of direct p1isaac for bot SDK methods
+     */
+    private writePacketOpcode(opcode: number): void {
+        this.currentPacketOpcode = opcode;
+        this.currentPacketStart = this.out.pos;
+        this.out.p1isaac(opcode);
+    }
+
+    /**
+     * Set login credentials for auto-login functionality
+     * Used by bot SDK to programmatically log in
+     */
+    setCredentials(username: string, password: string): void {
+        this.username = username;
+        this.password = password;
+    }
+
+    /**
+     * Get current login credentials
+     */
+    getCredentials(): { username: string; password: string } {
+        return { username: this.username, password: this.password };
+    }
+
+    /**
+     * Trigger login attempt with current credentials
+     * Call setCredentials first, then call this when on the login screen
+     */
+    async triggerLogin(): Promise<void> {
+        if (this.username && this.password && !this.ingame) {
+            await this.login(this.username, this.password, false);
+        }
+    }
+
+    /**
+     * Check if client is currently in game
+     */
+    isInGame(): boolean {
+        return this.ingame;
+    }
+
+    /**
+     * Get the current title screen state
+     * 0 = main menu (Existing User button), 2 = login form, 3 = new user
+     */
+    getTitleState(): number {
+        return this.titleScreenState;
+    }
+
+    /**
+     * Navigate to the login form (simulates clicking "Existing User")
+     * Only works when on title screen state 0
+     */
+    goToLoginScreen(): boolean {
+        if (this.titleScreenState === 0) {
+            this.titleScreenState = 2;
+            this.titleLoginField = 0;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Fully autonomous login - handles all states automatically
+     * Sets credentials, navigates to login screen, and logs in
+     */
+    async autoLogin(username: string, password: string): Promise<void> {
+        this.username = username;
+        this.password = password;
+
+        // If already in game, nothing to do
+        if (this.ingame) {
+            return;
+        }
+
+        // Wait for loading to complete (100%) before triggering login
+        // This prevents a race condition where login completes while assets are still unpacking
+        while (this.lastProgressPercent < 100) {
+            await sleep(100);
+        }
+
+        // If on main menu (state 0), go to login screen
+        if (this.titleScreenState === 0) {
+            this.titleScreenState = 2;
+            this.titleLoginField = 0;
+        }
+
+        // If on login screen (state 2), trigger login
+        if (this.titleScreenState === 2) {
+            await this.login(this.username, this.password, false);
+        }
+    }
+
+    /**
+     * Accept character design with current settings
+     * Sends the IF_PLAYERDESIGN packet to finalize the character
+     */
+    acceptCharacterDesign(): boolean {
+        if (!this.ingame || !this.out) {
+            return false;
+        }
+
+        this.writePacketOpcode(ClientProt.IF_PLAYERDESIGN);
+        this.out.p1(this.designGender ? 0 : 1);
+
+        for (let i = 0; i < 7; i++) {
+            this.out.p1(this.designKits[i]);
+        }
+
+        for (let i = 0; i < 5; i++) {
+            this.out.p1(this.designColours[i]);
+        }
+
+        return true;
+    }
+
+    /**
+     * Find an NPC by name in the nearby NPC list
+     * Returns the NPC index for use with talkToNpc, or -1 if not found
+     */
+    findNpcByName(name: string): number {
+        const nameLower = name.toLowerCase();
+
+        for (let i = 0; i < this.npcCount; i++) {
+            const npcIndex = this.npcIds[i];
+            const npc = this.npcs[npcIndex];
+
+            if (npc && npc.type && npc.type.name) {
+                if (npc.type.name.toLowerCase().includes(nameLower)) {
+                    return npcIndex;
+                }
+            }
+        }
+
+        return -1;
+    }
+
+    /**
+     * Get all nearby NPCs with their details
+     */
+    getNearbyNpcs(): Array<{ index: number; name: string; options: string[] }> {
+        const result: Array<{ index: number; name: string; options: string[] }> = [];
+
+        for (let i = 0; i < this.npcCount; i++) {
+            const npcIndex = this.npcIds[i];
+            const npc = this.npcs[npcIndex];
+
+            if (npc && npc.type) {
+                const options: string[] = [];
+                if (npc.type.op) {
+                    for (const op of npc.type.op) {
+                        if (op) options.push(op);
+                    }
+                }
+
+                result.push({
+                    index: npcIndex,
+                    name: npc.type.name || 'Unknown',
+                    options
+                });
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Talk to an NPC by index (sends OPNPC1 - first option, usually "Talk-to")
+     * Use findNpcByName to get the index
+     */
+    talkToNpc(npcIndex: number): boolean {
+        if (!this.ingame || !this.out || npcIndex < 0) {
+            return false;
+        }
+
+        const npc = this.npcs[npcIndex];
+        if (!npc) {
+            return false;
+        }
+
+        // Send OPNPC1 packet (Talk-to)
+        this.writePacketOpcode(ClientProt.OPNPC1);
+        this.out.p2(npcIndex);
+
+        return true;
+    }
+
+    /**
+     * Interact with an NPC using a specific option (1-5)
+     * Option 1 is usually "Talk-to", Option 2 might be "Pickpocket", etc.
+     * Use getNearbyNpcs() to see available options for each NPC
+     */
+    interactNpc(npcIndex: number, optionIndex: number): boolean {
+        if (!this.ingame || !this.out || npcIndex < 0 || optionIndex < 1 || optionIndex > 5) {
+            return false;
+        }
+
+        const npc = this.npcs[npcIndex];
+        if (!npc) {
+            return false;
+        }
+
+        // Send the appropriate OPNPC packet based on option index
+        const opcodes = [
+            ClientProt.OPNPC1,
+            ClientProt.OPNPC2,
+            ClientProt.OPNPC3,
+            ClientProt.OPNPC4,
+            ClientProt.OPNPC5
+        ];
+        this.writePacketOpcode(opcodes[optionIndex - 1]);
+        this.out.p2(npcIndex);
+
+        return true;
+    }
+
+    /**
+     * Pick up a ground item at the specified world coordinates
+     * Use the groundItems from BotState to get item locations
+     */
+    pickupGroundItem(worldX: number, worldZ: number, itemId: number): boolean {
+        if (!this.ingame || !this.out || !this.localPlayer) {
+            return false;
+        }
+
+        // Convert world coordinates to scene coordinates
+        const sceneX = worldX - this.sceneBaseTileX;
+        const sceneZ = worldZ - this.sceneBaseTileZ;
+
+        // Validate scene coordinates
+        if (sceneX < 0 || sceneX >= 104 || sceneZ < 0 || sceneZ >= 104) {
+            return false;
+        }
+
+        // First send MOVE_OPCLICK via tryMove (type=2) to walk to the item
+        this.tryMove(
+            this.localPlayer.routeTileX[0],
+            this.localPlayer.routeTileZ[0],
+            sceneX,
+            sceneZ,
+            2,      // type 2 = MOVE_OPCLICK (for interacting with something)
+            0, 0,   // locWidth, locLength
+            0, 0,   // locAngle, locShape
+            0,      // forceapproach
+            false   // tryNearest
+        );
+
+        // Then send OPOBJ3 packet (Take is option 3, not option 1)
+        // Ground item options: op[0]=OPOBJ1, op[1]=OPOBJ2, op[2]=OPOBJ3(Take), op[3]=OPOBJ4, op[4]=OPOBJ5
+        this.writePacketOpcode(ClientProt.OPOBJ3);
+        this.out.p2(worldX);
+        this.out.p2(worldZ);
+        this.out.p2(itemId);
+
+        return true;
+    }
+
+    /**
+     * Interact with a ground item using a specific option (1-5)
+     * Option 1 = op[0], Option 2 = op[1], Option 3 = Take (op[2]), etc.
+     */
+    interactGroundItem(worldX: number, worldZ: number, itemId: number, optionIndex: number): boolean {
+        if (!this.ingame || !this.out || !this.localPlayer || optionIndex < 1 || optionIndex > 5) {
+            return false;
+        }
+
+        // Convert world coordinates to scene coordinates
+        const sceneX = worldX - this.sceneBaseTileX;
+        const sceneZ = worldZ - this.sceneBaseTileZ;
+
+        // Validate scene coordinates
+        if (sceneX < 0 || sceneX >= 104 || sceneZ < 0 || sceneZ >= 104) {
+            return false;
+        }
+
+        // First send MOVE_OPCLICK via tryMove (type=2) to walk to the item
+        this.tryMove(
+            this.localPlayer.routeTileX[0],
+            this.localPlayer.routeTileZ[0],
+            sceneX,
+            sceneZ,
+            2,      // type 2 = MOVE_OPCLICK (for interacting with something)
+            0, 0,   // locWidth, locLength
+            0, 0,   // locAngle, locShape
+            0,      // forceapproach
+            false   // tryNearest
+        );
+
+        // Then send OPOBJ packet
+        const opcodes = [
+            ClientProt.OPOBJ1,
+            ClientProt.OPOBJ2,
+            ClientProt.OPOBJ3,
+            ClientProt.OPOBJ4,
+            ClientProt.OPOBJ5
+        ];
+        this.writePacketOpcode(opcodes[optionIndex - 1]);
+        this.out.p2(worldX);
+        this.out.p2(worldZ);
+        this.out.p2(itemId);
+
+        return true;
+    }
+
+    /**
+     * Use/interact with an inventory item
+     * optionIndex: 1-5 for different item options
+     * Option 1 is usually the primary action (Eat, Wear, Wield, etc.)
+     * slot: inventory slot (0-27)
+     * interfaceId: usually 3214 for main inventory
+     */
+    useInventoryItem(slot: number, optionIndex: number, interfaceId: number = 3214): boolean {
+        console.log(`[Client] useInventoryItem called - slot: ${slot}, optionIndex: ${optionIndex}, interfaceId: ${interfaceId}`);
+
+        if (!this.ingame || !this.out || optionIndex < 1 || optionIndex > 5) {
+            console.log(`[Client] useInventoryItem REJECTED - ingame: ${this.ingame}, out: ${!!this.out}, optionIndex: ${optionIndex}`);
+            return false;
+        }
+
+        // Get item ID from the inventory slot
+        const component = Component.types[interfaceId];
+        if (!component || !component.invSlotObjId) {
+            console.log(`[Client] useInventoryItem FAILED - component not found or no invSlotObjId for interfaceId: ${interfaceId}`);
+            return false;
+        }
+
+        const rawItemId = component.invSlotObjId[slot];
+        console.log(`[Client] useInventoryItem - rawItemId at slot ${slot}: ${rawItemId}`);
+
+        if (!rawItemId || rawItemId <= 0) {
+            console.log(`[Client] useInventoryItem FAILED - no item at slot ${slot} (rawItemId: ${rawItemId})`);
+            return false;
+        }
+
+        // Must use ObjType.get().id like the original menu code does
+        const obj = ObjType.get(rawItemId - 1);
+        const itemId = obj.id;
+
+        const opcodes = [
+            ClientProt.OPHELD1,
+            ClientProt.OPHELD2,
+            ClientProt.OPHELD3,
+            ClientProt.OPHELD4,
+            ClientProt.OPHELD5
+        ];
+        const opcode = opcodes[optionIndex - 1];
+        console.log(`[Client] useInventoryItem SENDING packet - opcode: ${opcode}, item: ${obj.name} (id:${itemId}), slot: ${slot}, interfaceId: ${interfaceId}`);
+
+        this.writePacketOpcode(opcode);
+        this.out.p2(itemId);
+        this.out.p2(slot);
+        this.out.p2(interfaceId);
+
+        console.log(`[Client] useInventoryItem SUCCESS - packet sent`);
+        return true;
+    }
+
+    /**
+     * Drop an inventory item (usually option 5)
+     */
+    dropInventoryItem(slot: number): boolean {
+        console.log(`[Client] dropInventoryItem called - slot: ${slot}`);
+        return this.useInventoryItem(slot, 5);
+    }
+
+    /**
+     * Check if shop is currently open
+     */
+    isShopOpen(): boolean {
+        return this.viewportInterfaceId === 3824 && this.sidebarInterfaceId === 3822;
+    }
+
+    /**
+     * Get current shop state
+     */
+    getShopState(): { isOpen: boolean; title: string } {
+        if (!this.isShopOpen()) {
+            return { isOpen: false, title: '' };
+        }
+        let title = '';
+        try {
+            const titleComponent = Component.types[3901];
+            if (titleComponent && titleComponent.text) {
+                title = titleComponent.text;
+            }
+        } catch { /* ignore */ }
+        return { isOpen: true, title };
+    }
+
+    /**
+     * Buy an item from the shop
+     * slot: the slot number in the shop inventory (0-based)
+     * amount: 1, 5, or 10 (corresponds to Buy 1, Buy 5, Buy 10)
+     * Shop interface ID: 3900 (shop_template:inv)
+     */
+    shopBuy(slot: number, amount: number = 1): boolean {
+        if (!this.ingame || !this.out || !this.isShopOpen()) {
+            return false;
+        }
+
+        const SHOP_INV_ID = 3900;
+        const component = Component.types[SHOP_INV_ID];
+        if (!component || !component.invSlotObjId) {
+            return false;
+        }
+
+        const rawItemId = component.invSlotObjId[slot];
+        if (!rawItemId || rawItemId <= 0) {
+            return false;
+        }
+
+        // Must use ObjType.get().id like the original menu code does
+        const obj = ObjType.get(rawItemId - 1);
+        const itemId = obj.id;
+
+        // Map amount to option index: 1->2 (Buy 1), 5->3 (Buy 5), 10->4 (Buy 10)
+        let optionIndex = 2; // Default to Buy 1
+        if (amount === 5) optionIndex = 3;
+        else if (amount === 10) optionIndex = 4;
+
+        // INV_BUTTON opcodes for shop interface actions
+        const opcodes = [
+            ClientProt.INV_BUTTON1, // Option 1 - Value
+            ClientProt.INV_BUTTON2, // Option 2 - Buy 1
+            ClientProt.INV_BUTTON3, // Option 3 - Buy 5
+            ClientProt.INV_BUTTON4, // Option 4 - Buy 10
+            ClientProt.INV_BUTTON5  // Option 5
+        ];
+
+        this.writePacketOpcode(opcodes[optionIndex - 1]);
+        this.out.p2(itemId);
+        this.out.p2(slot);
+        this.out.p2(SHOP_INV_ID);
+
+        return true;
+    }
+
+    /**
+     * Sell an item to the shop
+     * slot: the slot number in player's inventory (0-based)
+     * amount: 1, 5, or 10 (corresponds to Sell 1, Sell 5, Sell 10)
+     * Shop side panel interface ID: 3823 (shop_template_side:inv)
+     */
+    shopSell(slot: number, amount: number = 1): boolean {
+        if (!this.ingame || !this.out || !this.isShopOpen()) {
+            return false;
+        }
+
+        const SHOP_SIDE_INV_ID = 3823;
+        const component = Component.types[SHOP_SIDE_INV_ID];
+        if (!component || !component.invSlotObjId) {
+            return false;
+        }
+
+        const rawItemId = component.invSlotObjId[slot];
+        if (!rawItemId || rawItemId <= 0) {
+            return false;
+        }
+
+        // Must use ObjType.get().id like the original menu code does
+        const obj = ObjType.get(rawItemId - 1);
+        const itemId = obj.id;
+
+        // Map amount to option index: 1->2 (Sell 1), 5->3 (Sell 5), 10->4 (Sell 10)
+        let optionIndex = 2; // Default to Sell 1
+        if (amount === 5) optionIndex = 3;
+        else if (amount === 10) optionIndex = 4;
+
+        // INV_BUTTON opcodes for shop interface actions
+        const opcodes = [
+            ClientProt.INV_BUTTON1, // Option 1 - Value
+            ClientProt.INV_BUTTON2, // Option 2 - Sell 1
+            ClientProt.INV_BUTTON3, // Option 3 - Sell 5
+            ClientProt.INV_BUTTON4, // Option 4 - Sell 10
+            ClientProt.INV_BUTTON5  // Option 5
+        ];
+
+        this.writePacketOpcode(opcodes[optionIndex - 1]);
+        this.out.p2(itemId);
+        this.out.p2(slot);
+        this.out.p2(SHOP_SIDE_INV_ID);
+
+        return true;
+    }
+
+    /**
+     * Close the shop interface
+     */
+    closeShop(): boolean {
+        if (!this.ingame || !this.out || !this.isShopOpen()) {
+            return false;
+        }
+
+        // Click the close button (component 3902 = shop_template:com_77)
+        this.writePacketOpcode(ClientProt.IF_BUTTON);
+        this.out.p2(3902);
+
+        return true;
+    }
+
+    /**
+     * Set combat style (0-3)
+     * Finds the current combat interface in tab 0 and clicks the appropriate button
+     */
+    setCombatStyle(style: number): boolean {
+        if (!this.ingame || !this.out) {
+            return false;
+        }
+
+        // Get the combat interface from tab 0
+        const combatInterfaceId = this.tabInterfaceId[0];
+        if (combatInterfaceId === -1) {
+            console.log('[Client] No combat interface in tab 0');
+            return false;
+        }
+
+        const combatInterface = Component.types[combatInterfaceId];
+        if (!combatInterface || !combatInterface.children) {
+            console.log('[Client] Combat interface has no children');
+            return false;
+        }
+
+        // Find the button component that corresponds to the desired style
+        // Combat buttons have buttonType=5 (SELECT) and scriptOperand that equals the style
+        for (const childId of combatInterface.children) {
+            const child = Component.types[childId];
+            if (!child) continue;
+
+            // Check if this is a SELECT button
+            if (child.buttonType === 5) { // BUTTON_SELECT
+                // Check if this button is for the desired style
+                // The scriptOperand[0] contains the value that's compared with com_mode
+                if (child.scriptOperand && child.scriptOperand[0] === style) {
+                    // Click this button
+                    this.writePacketOpcode(ClientProt.IF_BUTTON);
+                    this.out.p2(childId);
+                    console.log(`[Client] Clicked combat style button ${childId} for style ${style}`);
+                    return true;
+                }
+            }
+
+            // Also check nested children (combat buttons might be in a layer)
+            if (child.children) {
+                for (const grandchildId of child.children) {
+                    const grandchild = Component.types[grandchildId];
+                    if (!grandchild) continue;
+
+                    if (grandchild.buttonType === 5 && grandchild.scriptOperand && grandchild.scriptOperand[0] === style) {
+                        this.writePacketOpcode(ClientProt.IF_BUTTON);
+                        this.out.p2(grandchildId);
+                        console.log(`[Client] Clicked combat style button ${grandchildId} for style ${style}`);
+                        return true;
+                    }
+                }
+            }
+        }
+
+        console.log(`[Client] Could not find combat style button for style ${style}`);
+        return false;
+    }
+
+    /**
+     * Get current combat style (0-3)
+     * Returns the currently selected attack style from the combat interface
+     */
+    getCombatStyle(): number {
+        // The combat style is stored in varps (com_mode varp)
+        // Try common varp indices
+        for (const tryIndex of [43, 11, 12, 13, 42, 44]) {
+            const val = this.varps[tryIndex];
+            if (val !== undefined && val >= 0 && val <= 3) {
+                return val;
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Send a public chat message in-game
+     * The message will appear above the player's head and in the chat log
+     * @param message The message to send (max 80 characters)
+     * @returns true if successful, false otherwise
+     */
+    say(message: string): boolean {
+        if (!this.ingame || !this.out || !this.localPlayer) {
+            return false;
+        }
+
+        // Truncate message to 80 characters max
+        let text = message.substring(0, 80);
+
+        // Send MESSAGE_PUBLIC packet
+        this.out.p1isaac(ClientProt.MESSAGE_PUBLIC);
+        this.out.p1(0); // size placeholder
+        const start: number = this.out.pos;
+
+        // No color or effect (0, 0)
+        this.out.p1(0); // color
+        this.out.p1(0); // effect
+        WordPack.pack(this.out, text);
+        this.out.psize1(this.out.pos - start);
+
+        // Update local display
+        text = JString.toSentenceCase(text);
+        text = WordFilter.filter(text);
+
+        if (this.localPlayer) {
+            this.localPlayer.chatMessage = text;
+            this.localPlayer.chatColour = 0;
+            this.localPlayer.chatEffect = 0;
+            this.localPlayer.chatTimer = 150;
+
+            // Add to chat log
+            this.addMessage(2, this.localPlayer.chatMessage, this.localPlayer.name ?? '');
+        }
+
+        return true;
+    }
+
+    /**
+     * Use one inventory item on another inventory item (OPHELDU)
+     * Used for things like: tinderbox on logs, knife on logs, etc.
+     *
+     * sourceSlot: the slot of the item being used (e.g., tinderbox)
+     * targetSlot: the slot of the item being used on (e.g., logs)
+     * interfaceId: usually 3214 for main inventory
+     */
+    useItemOnItem(sourceSlot: number, targetSlot: number, interfaceId: number = 3214): boolean {
+        if (!this.ingame || !this.out) {
+            console.log('[Client] useItemOnItem failed - not in game');
+            return false;
+        }
+
+        // Get the interface component
+        const component = Component.types[interfaceId];
+        if (!component || !component.invSlotObjId) {
+            console.log('[Client] useItemOnItem failed - invalid interface');
+            return false;
+        }
+
+        // Get source item - must use ObjType.get().id like the original menu code does
+        const sourceRawId = component.invSlotObjId[sourceSlot];
+        if (!sourceRawId || sourceRawId === 0) {
+            console.log(`[Client] useItemOnItem failed - no item in source slot ${sourceSlot}`);
+            return false;
+        }
+        const sourceObj = ObjType.get(sourceRawId - 1);
+        const sourceItemId = sourceObj.id;
+
+        // Get target item - must use ObjType.get().id like the original menu code does
+        const targetRawId = component.invSlotObjId[targetSlot];
+        if (!targetRawId || targetRawId === 0) {
+            console.log(`[Client] useItemOnItem failed - no item in target slot ${targetSlot}`);
+            return false;
+        }
+        const targetObj = ObjType.get(targetRawId - 1);
+        const targetItemId = targetObj.id;
+
+        console.log(`[Client] Using item ${sourceObj.name} (id:${sourceItemId}, slot ${sourceSlot}) on item ${targetObj.name} (id:${targetItemId}, slot ${targetSlot})`);
+
+        // Send OPHELDU packet
+        // Format: targetItemId, targetSlot, targetInterface, sourceItemId, sourceSlot, sourceInterface
+        this.writePacketOpcode(ClientProt.OPHELDU);
+        this.out.p2(targetItemId);       // Target item ID
+        this.out.p2(targetSlot);         // Target slot
+        this.out.p2(interfaceId);        // Target interface
+        this.out.p2(sourceItemId);       // Source item ID
+        this.out.p2(sourceSlot);         // Source slot
+        this.out.p2(interfaceId);        // Source interface
+
+        return true;
+    }
+
+    /**
+     * Use an inventory item on a location (OPLOCU)
+     * Used for things like: using axe on tree, using item on object, etc.
+     *
+     * itemSlot: the slot of the item being used
+     * worldX, worldZ: world coordinates of the location
+     * locId: the location/object ID to interact with
+     * interfaceId: usually 3214 for main inventory
+     */
+    useItemOnLoc(itemSlot: number, worldX: number, worldZ: number, locId: number, interfaceId: number = 3214): boolean {
+        if (!this.ingame || !this.out || !this.localPlayer) {
+            console.log('[Client] useItemOnLoc failed - not in game');
+            return false;
+        }
+
+        // Get the interface component
+        const component = Component.types[interfaceId];
+        if (!component || !component.invSlotObjId) {
+            console.log('[Client] useItemOnLoc failed - invalid interface');
+            return false;
+        }
+
+        // Get item - must use ObjType.get().id like the original menu code does
+        const rawItemId = component.invSlotObjId[itemSlot];
+        if (!rawItemId || rawItemId === 0) {
+            console.log(`[Client] useItemOnLoc failed - no item in slot ${itemSlot}`);
+            return false;
+        }
+        const itemObj = ObjType.get(rawItemId - 1);
+        const itemId = itemObj.id;
+
+        // Convert world coordinates to scene coordinates for pathfinding
+        const destSceneX = worldX - this.sceneBaseTileX;
+        const destSceneZ = worldZ - this.sceneBaseTileZ;
+
+        // Check if location is in scene bounds
+        if (destSceneX < 0 || destSceneX > 103 || destSceneZ < 0 || destSceneZ > 103) {
+            console.log(`[Client] useItemOnLoc failed - location out of scene bounds`);
+            return false;
+        }
+
+        // Try to pathfind to the location
+        const loc = LocType.get(locId);
+        if (loc) {
+            let width = loc.width;
+            let height = loc.length;
+            this.tryMove(this.localPlayer.routeTileX[0], this.localPlayer.routeTileZ[0], destSceneX, destSceneZ, 2, width, height, 0, 0, 0, false);
+        }
+
+        console.log(`[Client] Using item ${itemObj.name} (id:${itemId}, slot ${itemSlot}) on loc ${loc?.name || locId} at (${worldX}, ${worldZ})`);
+
+        // Send OPLOCU packet
+        // Format: x, z, locId, itemId, itemSlot, itemInterface
+        this.writePacketOpcode(ClientProt.OPLOCU);
+        this.out.p2(worldX);         // World X
+        this.out.p2(worldZ);         // World Z
+        this.out.p2(locId);          // Location ID
+        this.out.p2(itemId);         // Item ID
+        this.out.p2(itemSlot);       // Item slot
+        this.out.p2(interfaceId);    // Item interface
+
+        return true;
+    }
+
+    /**
+     * Walk to a world coordinate using proper client-side pathfinding
+     * worldX, worldZ: absolute world tile coordinates
+     * running: if true, hold ctrl to run
+     *
+     * Emulates GUI click behavior:
+     * - Out-of-scene destinations are clamped to scene edge
+     * - Blocked destinations snap to nearest reachable tile
+     */
+    walkTo(worldX: number, worldZ: number, running: boolean = false): boolean {
+        if (!this.ingame || !this.out || !this.localPlayer) {
+            return false;
+        }
+
+        // Convert world coordinates to scene coordinates
+        let destSceneX = worldX - this.sceneBaseTileX;
+        let destSceneZ = worldZ - this.sceneBaseTileZ;
+
+        // Clamp to scene bounds (1-102 to stay safely within 0-103 range)
+        // This emulates the GUI behavior of clicking outside the visible area
+        const minBound = 1;
+        const maxBound = 102;
+        const wasClamped = destSceneX < minBound || destSceneX > maxBound || destSceneZ < minBound || destSceneZ > maxBound;
+
+        destSceneX = Math.max(minBound, Math.min(maxBound, destSceneX));
+        destSceneZ = Math.max(minBound, Math.min(maxBound, destSceneZ));
+
+        if (wasClamped) {
+            console.log(`[Walk] Destination clamped to scene bounds: (${destSceneX + this.sceneBaseTileX}, ${destSceneZ + this.sceneBaseTileZ})`);
+        }
+
+        // Set running state temporarily via actionKey[5] (ctrl key)
+        const prevActionKey = this.actionKey[5];
+        this.actionKey[5] = running ? 1 : 0;
+
+        // Use tryMove with proper pathfinding (type 0 = MOVE_GAMECLICK)
+        // Parameters: srcX, srcZ, destX, destZ, type, locWidth, locLength, locAngle, locShape, forceapproach, tryNearest
+        // tryNearest=true means if exact tile is blocked, find nearest reachable tile (emulates GUI click behavior)
+        const success = this.tryMove(
+            this.localPlayer.routeTileX[0],
+            this.localPlayer.routeTileZ[0],
+            destSceneX,
+            destSceneZ,
+            0,      // type 0 = MOVE_GAMECLICK
+            0, 0,   // locWidth, locLength (not targeting a loc)
+            0, 0,   // locAngle, locShape
+            0,      // forceapproach
+            true    // tryNearest - find nearest reachable tile if exact is blocked
+        );
+
+        // Restore action key
+        this.actionKey[5] = prevActionKey;
+
+        if (success) {
+            this.crossX = 256; // center of screen
+            this.crossY = 166;
+            this.crossMode = 1;
+            this.crossCycle = 0;
+        }
+
+        return success;
+    }
+
+    /**
+     * Walk relative to current position
+     * deltaX, deltaZ: tiles to move (positive = east/north, negative = west/south)
+     */
+    walkRelative(deltaX: number, deltaZ: number, running: boolean = false): boolean {
+        if (!this.ingame || !this.localPlayer) {
+            return false;
+        }
+
+        // Get current world tile position
+        const currentTileX = (this.localPlayer.x >> 7);
+        const currentTileZ = (this.localPlayer.z >> 7);
+        const worldX = this.sceneBaseTileX + currentTileX + deltaX;
+        const worldZ = this.sceneBaseTileZ + currentTileZ + deltaZ;
+
+        return this.walkTo(worldX, worldZ, running);
+    }
+
+    /**
+     * Get current player world coordinates
+     */
+    getPlayerPosition(): { worldX: number; worldZ: number; tileX: number; tileZ: number } | null {
+        if (!this.ingame || !this.localPlayer) {
+            return null;
+        }
+
+        const tileX = (this.localPlayer.x >> 7);
+        const tileZ = (this.localPlayer.z >> 7);
+        return {
+            worldX: this.sceneBaseTileX + tileX,
+            worldZ: this.sceneBaseTileZ + tileZ,
+            tileX,
+            tileZ
+        };
+    }
+
+    /**
+     * Interact with a location/object in the world (doors, trees, etc.)
+     * optionIndex: 1-5 for different options
+     */
+    interactLoc(worldX: number, worldZ: number, locId: number, optionIndex: number): boolean {
+        if (!this.ingame || !this.out || optionIndex < 1 || optionIndex > 5) {
+            return false;
+        }
+
+        const opcodes = [
+            ClientProt.OPLOC1,
+            ClientProt.OPLOC2,
+            ClientProt.OPLOC3,
+            ClientProt.OPLOC4,
+            ClientProt.OPLOC5
+        ];
+        this.writePacketOpcode(opcodes[optionIndex - 1]);
+        this.out.p2(worldX);
+        this.out.p2(worldZ);
+        this.out.p2(locId);
+
+        return true;
+    }
+
+    /**
+     * Click a dialog continue button or select a dialog option
+     * optionIndex: 0 = click to continue, 1-5 = dialog options (1-based)
+     */
+    clickDialogOption(optionIndex: number = 0): boolean {
+        if (!this.ingame || !this.out) {
+            console.log('[clickDialogOption] Not in game or no output stream');
+            return false;
+        }
+
+        // For "click to continue" or resume dialog
+        if (optionIndex === 0) {
+            if (!this.pressedContinueOption && this.chatInterfaceId !== -1) {
+                console.log(`[clickDialogOption] Clicking continue on chatInterfaceId: ${this.chatInterfaceId}`);
+                this.writePacketOpcode(ClientProt.RESUME_PAUSEBUTTON);
+                this.out.p2(this.chatInterfaceId);
+                this.pressedContinueOption = true;
+                return true;
+            }
+            console.log(`[clickDialogOption] Cannot continue - pressedContinueOption: ${this.pressedContinueOption}, chatInterfaceId: ${this.chatInterfaceId}`);
+            return false;
+        }
+
+        // For numbered dialog options, find and click the button
+        // Dialog options are child components of the chat interface
+        if (this.chatInterfaceId !== -1) {
+            const dialogOptions = this.getDialogOptions();
+            console.log(`[clickDialogOption] Found ${dialogOptions.length} options in chatInterfaceId ${this.chatInterfaceId}:`,
+                dialogOptions.map(o => `${o.index}. "${o.text}" (component: ${o.componentId}, buttonType: ${o.buttonType})`));
+            if (optionIndex > 0 && optionIndex <= dialogOptions.length) {
+                const option = dialogOptions[optionIndex - 1];
+
+                // Use the correct packet based on button type:
+                // BUTTON_OK (1) uses IF_BUTTON
+                // BUTTON_CONTINUE (6) uses RESUME_PAUSEBUTTON
+                if (option.buttonType === ButtonType.BUTTON_CONTINUE) {
+                    console.log(`[clickDialogOption] Clicking BUTTON_CONTINUE option ${optionIndex}: "${option.text}" (component: ${option.componentId})`);
+                    if (!this.pressedContinueOption) {
+                        this.writePacketOpcode(ClientProt.RESUME_PAUSEBUTTON);
+                        this.out.p2(option.componentId);
+                        this.pressedContinueOption = true;
+                        return true;
+                    }
+                    console.log('[clickDialogOption] Already pressed continue, waiting for response');
+                    return false;
+                } else {
+                    console.log(`[clickDialogOption] Clicking BUTTON_OK option ${optionIndex}: "${option.text}" (component: ${option.componentId})`);
+                    this.writePacketOpcode(ClientProt.IF_BUTTON);
+                    this.out.p2(option.componentId);
+                    return true;
+                }
+            }
+            console.log(`[clickDialogOption] Invalid option index ${optionIndex} (have ${dialogOptions.length} options)`);
+        } else {
+            console.log(`[clickDialogOption] No chat interface open (chatInterfaceId: ${this.chatInterfaceId})`);
+        }
+        return false;
+    }
+
+    /**
+     * Get available dialog options from the current chat interface
+     */
+    getDialogOptions(): Array<{ index: number; text: string; componentId: number; buttonType: number }> {
+        const options: Array<{ index: number; text: string; componentId: number; buttonType: number }> = [];
+
+        if (this.chatInterfaceId === -1) {
+            return options;
+        }
+
+        const scanComponent = (comId: number): void => {
+            const com = Component.types[comId];
+            if (!com) return;
+
+            // Check if this component is a clickable button with option text
+            // Dialog options can be:
+            // - BUTTON_OK (1) - standard clickable buttons, uses IF_BUTTON
+            // - BUTTON_CONTINUE (6) - dialog continue/choice buttons, uses RESUME_PAUSEBUTTON
+            // The 'option' field must be set for the button to be clickable
+            if ((com.buttonType === ButtonType.BUTTON_OK || com.buttonType === ButtonType.BUTTON_CONTINUE) && com.option) {
+                // Use 'text' for display if available, otherwise use 'option'
+                const displayText = com.text || com.option;
+                options.push({
+                    index: options.length + 1,
+                    text: displayText,
+                    componentId: comId,
+                    buttonType: com.buttonType
+                });
+            }
+
+            // Recursively scan children
+            if (com.children) {
+                for (const childId of com.children) {
+                    scanComponent(childId);
+                }
+            }
+        };
+
+        scanComponent(this.chatInterfaceId);
+        return options;
+    }
+
+    /**
+     * Debug: Get all components in the current chat interface
+     */
+    debugDialogComponents(): Array<{ id: number; type: number; buttonType: number; option: string; text: string }> {
+        const components: Array<{ id: number; type: number; buttonType: number; option: string; text: string }> = [];
+
+        if (this.chatInterfaceId === -1) {
+            return components;
+        }
+
+        const scanComponent = (comId: number, depth: number = 0): void => {
+            if (depth > 5) return; // Prevent infinite recursion
+            const com = Component.types[comId];
+            if (!com) return;
+
+            // Log ALL components for debugging
+            components.push({
+                id: comId,
+                type: com.type,
+                buttonType: com.buttonType,
+                option: com.option || '',
+                text: (com.text || '').substring(0, 50)
+            });
+
+            if (com.children) {
+                for (const childId of com.children) {
+                    scanComponent(childId, depth + 1);
+                }
+            }
+        };
+
+        scanComponent(this.chatInterfaceId);
+        return components;
+    }
+
+    /**
+     * Check if a modal interface (like character design or dialog) is open
+     */
+    isModalOpen(): boolean {
+        return this.modalInterface !== -1;
+    }
+
+    /**
+     * Check if a dialog/chat interface is currently open
+     */
+    isDialogOpen(): boolean {
+        return this.chatInterfaceId !== -1;
+    }
+
+    /**
+     * Get the currently open modal interface ID
+     */
+    getModalInterface(): number {
+        return this.modalInterface;
+    }
+
+    /**
+     * Get the currently open chat/dialog interface ID
+     */
+    getChatInterface(): number {
+        return this.chatInterfaceId;
+    }
+
+    /**
+     * Check if we're waiting for dialog response (already clicked continue)
+     */
+    isWaitingForDialog(): boolean {
+        return this.pressedContinueOption;
+    }
+
+    /**
+     * Check if a viewport interface (like crafting/fletching menus) is open
+     */
+    isViewportInterfaceOpen(): boolean {
+        return this.viewportInterfaceId !== -1;
+    }
+
+    /**
+     * Get the currently open viewport interface ID
+     */
+    getViewportInterface(): number {
+        return this.viewportInterfaceId;
+    }
+
+    /**
+     * Get available interface options from the current viewport interface
+     * This includes BUTTON_SELECT options used in crafting menus (like fletching)
+     */
+    getInterfaceOptions(): Array<{ index: number; text: string; componentId: number }> {
+        const options: Array<{ index: number; text: string; componentId: number }> = [];
+
+        if (this.viewportInterfaceId === -1) {
+            return options;
+        }
+
+        const scanComponent = (comId: number, depth: number = 0): void => {
+            if (depth > 10) return; // Prevent infinite recursion
+            const com = Component.types[comId];
+            if (!com) return;
+
+            // Check for BUTTON_SELECT (buttonType 5) - used in crafting menus
+            // Also check for BUTTON_OK (buttonType 1) in viewport interfaces
+            if ((com.buttonType === ButtonType.BUTTON_SELECT || com.buttonType === ButtonType.BUTTON_OK) && com.option) {
+                options.push({
+                    index: options.length + 1,
+                    text: com.option || com.text || `Option ${options.length + 1}`,
+                    componentId: comId
+                });
+            }
+
+            // Recursively scan children
+            if (com.children) {
+                for (const childId of com.children) {
+                    scanComponent(childId, depth + 1);
+                }
+            }
+        };
+
+        scanComponent(this.viewportInterfaceId);
+        return options;
+    }
+
+    /**
+     * Click an option in a viewport interface (like crafting/fletching menus)
+     * optionIndex: 1-based index of the option to click
+     */
+    clickInterfaceOption(optionIndex: number): boolean {
+        if (!this.ingame || !this.out) {
+            return false;
+        }
+
+        if (this.viewportInterfaceId === -1) {
+            return false;
+        }
+
+        const interfaceOptions = this.getInterfaceOptions();
+        if (optionIndex > 0 && optionIndex <= interfaceOptions.length) {
+            const option = interfaceOptions[optionIndex - 1];
+            this.writePacketOpcode(ClientProt.IF_BUTTON);
+            this.out.p2(option.componentId);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Perform a complete tutorial skip sequence
+     * Talks to the RuneScape Guide to trigger the skip tutorial dialog
+     * Returns a promise that resolves when actions are queued
+     */
+    async skipTutorial(): Promise<{ success: boolean; message: string }> {
+        if (!this.ingame) {
+            return { success: false, message: 'Not in game yet' };
+        }
+
+        // If a dialog is open, try to interact with it
+        if (this.isDialogOpen()) {
+            // If we're waiting for dialog response, don't send again
+            if (this.isWaitingForDialog()) {
+                return { success: false, message: 'Waiting for dialog response...' };
+            }
+
+            const options = this.getDialogOptions();
+
+            // If there are dialog options, look for yes/skip option
+            if (options.length > 0) {
+                // Look for "Yes please" or similar affirmative option
+                for (let i = 0; i < options.length; i++) {
+                    const text = options[i].text.toLowerCase();
+                    if (text.includes('yes')) {
+                        this.clickDialogOption(i + 1);
+                        return { success: true, message: `Selected: ${options[i].text}` };
+                    }
+                }
+                // If no clear yes option, just click option 1
+                this.clickDialogOption(1);
+                return { success: true, message: `Selected: ${options[0]?.text || 'option 1'}` };
+            }
+
+            // No options available, click continue
+            if (this.clickDialogOption(0)) {
+                return { success: true, message: 'Clicked continue' };
+            }
+
+            return { success: false, message: 'Dialog open but cannot interact' };
+        }
+
+        // Find and talk to RuneScape Guide
+        const guideIndex = this.findNpcByName('RuneScape Guide');
+        if (guideIndex >= 0) {
+            this.talkToNpc(guideIndex);
+            return { success: true, message: 'Talking to RuneScape Guide' };
+        }
+
+        // Try other common tutorial NPC names
+        const alternateNames = ['Guide', 'Tutorial'];
+        for (const name of alternateNames) {
+            const idx = this.findNpcByName(name);
+            if (idx >= 0) {
+                this.talkToNpc(idx);
+                return { success: true, message: `Talking to ${name}` };
+            }
+        }
+
+        return { success: false, message: 'No tutorial NPC found nearby' };
+    }
+
+    // === AGENT MODE PUBLIC METHODS ===
+
+    /**
+     * Enable AI agent mode - shows agent panel and connects to sync service
+     */
+    enableAgentMode(): void {
+        if (this.botOverlay) {
+            this.botOverlay.toggleAgentMode();
+        }
+    }
+
+    /**
+     * Toggle AI agent mode on/off
+     */
+    toggleAgentMode(): void {
+        if (this.botOverlay) {
+            this.botOverlay.toggleAgentMode();
+        }
+    }
+
+    /**
+     * Check if AI agent mode is enabled (panel visible)
+     */
+    isAgentModeEnabled(): boolean {
+        return this.botOverlay?.isAgentPanelVisible() || false;
+    }
+
+    // === END AGENT MODE PUBLIC METHODS ===
+
+    // === END BOT SDK PUBLIC METHODS ===
 
     static setLowMemory(): void {
         World3D.lowMemory = true;
@@ -1575,6 +2879,11 @@ export class Client extends GameShell {
                 Client.oplogic8 = 0;
                 Client.oplogic9 = 0;
 
+                // Initialize Bot SDK overlay (only if enabled)
+                if (ENABLE_BOT_SDK && BotOverlay && !this.botOverlay) {
+                    this.botOverlay = new BotOverlay(this);
+                }
+
                 this.prepareGame();
             } else if (reply === 3) {
                 this.loginMessage0 = '';
@@ -1626,6 +2935,11 @@ export class Client extends GameShell {
                 this.menuSize = 0;
                 this.menuVisible = false;
                 this.sceneLoadStartTime = performance.now();
+
+                // Show Bot SDK overlay on reconnection
+                if (this.botOverlay) {
+                    this.botOverlay.show();
+                }
             } else if (reply === 16) {
                 this.loginMessage0 = 'Login attempts exceeded.';
                 this.loginMessage1 = 'Please wait 1 minute and try again.';
@@ -1657,6 +2971,11 @@ export class Client extends GameShell {
         this.titleScreenState = 0;
         this.username = '';
         this.password = '';
+
+        // Hide Bot SDK overlay on logout
+        if (this.botOverlay) {
+            this.botOverlay.hide();
+        }
 
         InputTracking.setDisabled();
         this.clearCache();
@@ -2002,6 +3321,12 @@ export class Client extends GameShell {
 
             try {
                 if (this.stream && this.out.pos > 0) {
+                    // Log packet data before sending (for debugging)
+                    if (this.packetLogEnabled) {
+                        const dataBytes = Array.from(this.out.data.slice(0, this.out.pos));
+                        // First byte is the encrypted opcode - try to get the last known opcode
+                        this.logPacket(this.currentPacketOpcode, dataBytes);
+                    }
                     this.stream.write(this.out.data, this.out.pos);
                     this.out.pos = 0;
                     this.noTimeoutCycle = 0;
@@ -4603,6 +5928,17 @@ export class Client extends GameShell {
             this.areaBackbase1?.draw(0, 453);
 
             this.areaViewport?.bind();
+        }
+
+        // Update Bot SDK overlay
+        if (this.botOverlay) {
+            this.botOverlay.update();
+        }
+
+        // Tick Agent Mode (sends state, executes actions)
+        // Tick agent panel for sync service communication
+        if (this.botOverlay) {
+            this.botOverlay.tickAgentPanel();
         }
 
         this.sceneDelta = 0;
@@ -11535,5 +12871,15 @@ export class Client extends GameShell {
     getReportAbuseInterfaceId(): number {
         // custom: for report abuse input on mobile
         return this.reportAbuseInterfaceId;
+    }
+
+    /**
+     * Get the full bot state (for external automation/testing)
+     */
+    getBotState(): any {
+        if (this.botOverlay) {
+            return this.botOverlay.getState();
+        }
+        return null;
     }
 }

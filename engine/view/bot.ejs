@@ -157,17 +157,60 @@
         }
 
         function loadSettings() {
-            // Load saved credentials, or generate new username if none saved
-            const savedUser = localStorage.getItem('bot_username');
-            const savedPass = localStorage.getItem('bot_password');
+            // Load username from URL ?bot= param, or generate random if none
+            const urlParams = new URLSearchParams(window.location.search);
+            const botUsername = urlParams.get('bot');
             const usernameField = document.getElementById('bot-username');
-            if (savedUser) {
-                usernameField.value = savedUser;
+
+            if (botUsername) {
+                usernameField.value = botUsername;
             } else if (!usernameField.value) {
-                // Generate random if nothing saved and field is empty
-                usernameField.value = 'b' + Math.random().toString(36).substring(2, 7);
+                // Generate random if no URL param and field is empty
+                const newUsername = 'b' + Math.random().toString(36).substring(2, 7);
+                usernameField.value = newUsername;
+                // Update URL with new username (without reload)
+                updateUrlWithBot(newUsername);
             }
+
+            // Load password from localStorage (password can still be cached)
+            const savedPass = localStorage.getItem('bot_password');
             if (savedPass) document.getElementById('bot-password').value = savedPass;
+
+            // Load goal from URL ?goal= param
+            const botGoal = urlParams.get('goal');
+            if (botGoal && window.gameClient && window.gameClient.agentPanel) {
+                window.gameClient.agentPanel.setGoal(botGoal);
+            }
+            // Store goal for later if client not ready yet
+            if (botGoal) {
+                window.pendingGoal = botGoal;
+            }
+        }
+
+        // Update URL with bot username without page reload
+        function updateUrlWithBot(username) {
+            const url = new URL(window.location);
+            url.searchParams.set('bot', username);
+            window.history.replaceState({}, '', url);
+        }
+
+        // Sync username field changes to URL
+        function syncUsernameToUrl() {
+            const username = document.getElementById('bot-username').value.trim();
+            if (username) {
+                updateUrlWithBot(username);
+            }
+        }
+
+        // Update URL with goal without page reload
+        function updateUrlWithGoal(goal) {
+            const url = new URL(window.location);
+            if (goal) {
+                url.searchParams.set('goal', goal);
+            } else {
+                url.searchParams.delete('goal');
+            }
+            window.history.replaceState({}, '', url);
         }
 
         function setSize(size) {
@@ -220,7 +263,7 @@
         <!-- Bot Controls -->
         <div id="bot-controls">
             <div>
-                <input type="text" id="bot-username" placeholder="username" value="">
+                <input type="text" id="bot-username" placeholder="username" value="" onblur="syncUsernameToUrl();" onchange="syncUsernameToUrl();">
                 <button onclick="randomUsername();" title="Generate random name" style="background:#333;color:#04A800;padding:4px 8px;">🎲</button>
                 <input type="password" id="bot-password" placeholder="password" value="test">
                 <button onclick="quickLogin();" style="background:#04A800;">Login</button>
@@ -266,10 +309,11 @@
         }
 
 
-        // Generate new random username
+        // Generate new random username and sync to URL
         window.randomUsername = function() {
             const username = generateUsername();
             document.getElementById('bot-username').value = username;
+            updateUrlWithBot(username);
             document.getElementById('bot-status').textContent = 'Generated: ' + username;
             return username;
         };
@@ -281,6 +325,8 @@
                 username = generateUsername();
                 document.getElementById('bot-username').value = username;
             }
+            // Always sync username to URL
+            updateUrlWithBot(username);
             const password = document.getElementById('bot-password').value || 'test';
 
             document.getElementById('bot-status').textContent = 'Logging in as ' + username + '...';
@@ -288,8 +334,6 @@
             if (clientInstance && clientInstance.autoLogin) {
                 try {
                     await clientInstance.autoLogin(username, password);
-                    // Save the username to localStorage on successful login
-                    localStorage.setItem('bot_username', username);
                     document.getElementById('bot-status').textContent = 'Logged in as ' + username;
                 } catch (e) {
                     document.getElementById('bot-status').textContent = 'Login error: ' + e.message;
@@ -310,8 +354,8 @@
                 return;
             }
 
-            // Save credentials
-            localStorage.setItem('bot_username', username);
+            // Sync username to URL, save password to localStorage
+            updateUrlWithBot(username);
             localStorage.setItem('bot_password', password);
 
             // Use the fully autonomous autoLogin method
@@ -341,8 +385,8 @@
 
             document.getElementById('bot-status').textContent = 'Logging in as ' + username + '... (new accounts auto-register)';
 
-            // Save credentials
-            localStorage.setItem('bot_username', username);
+            // Sync username to URL, save password to localStorage
+            updateUrlWithBot(username);
             localStorage.setItem('bot_password', password);
 
             // Use fully autonomous login (server auto-registers new accounts)

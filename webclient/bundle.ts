@@ -1,12 +1,15 @@
 import fs from 'fs';
 import path from 'path';
 
-const define = {
+const baseDefine = {
     'process.env.SECURE_ORIGIN': JSON.stringify(process.env.SECURE_ORIGIN ?? 'false'),
     // original key, used 2003-2010
     'process.env.LOGIN_RSAE': JSON.stringify(process.env.LOGIN_RSAE ?? '58778699976184461502525193738213253649000149147835990136706041084440742975821'),
     'process.env.LOGIN_RSAN': JSON.stringify(process.env.LOGIN_RSAN ?? '7162900525229798032761816791230527296329313291232324290237849263501208207972894053929065636522363163621000728841182238772712427862772219676577293600221789')
 };
+
+// Build mode: 'standard', 'bot', or 'both'
+const buildMode = process.env.BUILD_MODE ?? 'both';
 
 // ----
 
@@ -15,11 +18,11 @@ type BunOutput = {
     sourcemap: string;
 }
 
-async function bunBuild(entry: string, external: string[] = [], minify = true, drop: string[] = []): Promise<BunOutput> {
+async function bunBuild(entry: string, external: string[] = [], minify = true, drop: string[] = [], customDefine: Record<string, string> = {}): Promise<BunOutput> {
     const build = await Bun.build({
         entrypoints: [entry],
         sourcemap: 'external',
-        define,
+        define: { ...baseDefine, ...customDefine },
         external,
         minify,
         drop,
@@ -43,30 +46,74 @@ function replaceDepsUrl(source: string) {
 
 // ----
 
-if (!fs.existsSync('out')) {
-    fs.mkdirSync('out');
+// Create output directories
+const outDirs = ['out', 'out/standard', 'out/bot'];
+for (const dir of outDirs) {
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
 }
 
+// Copy shared assets to both directories
+for (const outDir of ['out/standard', 'out/bot']) {
+    fs.copyFileSync('src/3rdparty/bzip2-wasm/bzip2.wasm', `${outDir}/bzip2.wasm`);
+    fs.copyFileSync('src/3rdparty/tinymidipcm/tinymidipcm.wasm', `${outDir}/tinymidipcm.wasm`);
+}
+
+// Also copy to root out for backwards compatibility
 fs.copyFileSync('src/3rdparty/bzip2-wasm/bzip2.wasm', 'out/bzip2.wasm');
 fs.copyFileSync('src/3rdparty/tinymidipcm/tinymidipcm.wasm', 'out/tinymidipcm.wasm');
 
 const args = process.argv.slice(2);
 const prod = args[0] !== 'dev';
 
-const entrypoints = [
-    'src/client/Client.ts',
-    'src/mapview/MapView.ts'
-];
-
+// Build shared deps
 const deps = await bunBuild('./src/3rdparty/deps.js', [], true, ['console']);
 fs.writeFileSync('out/deps.js', deps.source);
+fs.writeFileSync('out/standard/deps.js', deps.source);
+fs.writeFileSync('out/bot/deps.js', deps.source);
 
-for (const file of entrypoints) {
-    const output = path.basename(file).replace('.ts', '.js').toLowerCase();
+// Build configurations
+const builds = [
+    { name: 'standard', outDir: 'out/standard', enableBotSDK: 'false' },
+    { name: 'bot', outDir: 'out/bot', enableBotSDK: 'true' }
+];
 
-    const script = await bunBuild(file, ['#3rdparty/*'], prod, prod ? ['console'] : []);
+// Filter builds based on BUILD_MODE
+const buildsToRun = builds.filter(b => buildMode === 'both' || buildMode === b.name);
 
-    if (script) {
-        fs.writeFileSync('out/' + output, replaceDepsUrl(script.source));
-    }
+for (const buildConfig of buildsToRun) {
+    console.log(`Building ${buildConfig.name} client...`);
+
+    const customDefine = {
+        'process.env.ENABLE_BOT_SDK': JSON.stringify(buildConfig.enableBotSDK)
+    };
+
+    // Build client
+    const clientScript = await bunBuild(
+        'src/client/Client.ts',
+        ['#3rdparty/*'],
+        prod,
+        prod ? ['console'] : [],
+        customDefine
+    );
+    fs.writeFileSync(`${buildConfig.outDir}/client.js`, replaceDepsUrl(clientScript.source));
+
+    // Build mapview
+    const mapviewScript = await bunBuild(
+        'src/mapview/MapView.ts',
+        ['#3rdparty/*'],
+        prod,
+        prod ? ['console'] : [],
+        customDefine
+    );
+    fs.writeFileSync(`${buildConfig.outDir}/mapview.js`, replaceDepsUrl(mapviewScript.source));
 }
+
+// Copy bot client to root out for backwards compatibility
+if (buildMode === 'both' || buildMode === 'bot') {
+    fs.copyFileSync('out/bot/client.js', 'out/client.js');
+    fs.copyFileSync('out/bot/mapview.js', 'out/mapview.js');
+}
+
+console.log('Build complete!');

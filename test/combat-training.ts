@@ -5,34 +5,31 @@
  * Tests combat training flow via rsbot CLI:
  * 1. Skip tutorial if needed
  * 2. Equip sword and shield
- * 3. Set combat style to cycle through Attack/Strength/Defence training
+ * 3. Set combat style (auto-balance: trains lowest stat)
  * 4. Find and attack rats or humans (men/women)
  * 5. Monitor health and eat food when damaged
- *
- * Uses Puppeteer to connect the bot, but all game interactions
- * go through the rsbot CLI via the sync service.
+ * 6. Pick up bones dropped by killed men and bury them for Prayer XP
  *
  * Usage:
  *   bun run test/combat-training.ts
  *   BOT_NAME=fighter1 bun run test/combat-training.ts
- *   TRAIN_STYLE=strength bun run test/combat-training.ts
  */
 
-import puppeteer, { Browser, Page } from 'puppeteer';
-import { spawn } from 'child_process';
+import { Page } from 'puppeteer';
 import { mkdir, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { setupBotWithTutorialSkip, sleep, BotSession } from './utils/skip_tutorial';
 
 // Configuration
-const BOT_CLIENT_BASE_URL = 'http://localhost:8888/bot';
 const TURN_DELAY_MS = 600;
-const MAX_COMBAT_TURNS = 200;
+const MAX_COMBAT_TURNS = 500;
 const EAT_HEALTH_THRESHOLD = 10; // Eat when health drops below this
-const STYLE_SWITCH_INTERVAL = 50; // Switch combat styles every N turns
+const STYLE_SWITCH_INTERVAL = 10; // Switch combat styles every N turns
+const DEFENCE_WEIGHT = 1.5; // Defence needs to be this much lower to be trained
 
-// Training style from environment: attack, strength, defence, or cycle (default)
-const TRAIN_STYLE = (process.env.TRAIN_STYLE || 'cycle').toLowerCase();
+// Training style: auto-balance trains lowest stat with 2:1 preference for Atk/Str over Def
+const TRAIN_STYLE = 'auto';
 
 // Combat style indices
 const COMBAT_STYLES = {
@@ -42,16 +39,12 @@ const COMBAT_STYLES = {
     controlled: 3   // Controlled - trains all (shared)
 } as const;
 
-// CLI path
-const RSBOT_CLI = join(import.meta.dir, '..', 'agent', 'cli.ts');
-
 // Bot name from environment or generate one
-const BOT_NAME = process.env.BOT_NAME || 'fighter' + Math.random().toString(36).substring(2, 5);
+const BOT_NAME = process.env.BOT_NAME;
 
-// Create run directory for this test
-const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-const RUN_DIR = join(import.meta.dir, '..', 'runs', `${RUN_TIMESTAMP}-combat-training-${BOT_NAME}`);
-const SCREENSHOT_DIR = join(RUN_DIR, 'screenshots');
+// Run directory will be set after we know the bot name
+let RUN_DIR: string;
+let SCREENSHOT_DIR: string;
 
 interface CombatResult {
     botName: string;
@@ -72,6 +65,19 @@ interface CombatResult {
         humansKilled: number;
         foodEaten: number;
         damageTaken: number;
+        bonesPickedUp: number;
+        bonesBuried: number;
+    };
+    skillLevels: {
+        initialAttack: number;
+        initialStrength: number;
+        initialDefence: number;
+        finalAttack: number;
+        finalStrength: number;
+        finalDefence: number;
+        gainedAttackLevel: boolean;
+        gainedStrengthLevel: boolean;
+        gainedDefenceLevel: boolean;
     };
     turns: TurnRecord[];
     error?: string;
@@ -83,10 +89,6 @@ interface TurnRecord {
     health: number;
     action: string;
     result: string;
-}
-
-async function sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 async function ensureDir(dir: string): Promise<void> {
@@ -101,34 +103,8 @@ async function takeScreenshot(page: Page, name: string): Promise<string> {
     return filename;
 }
 
-// Execute rsbot CLI command and return output
-async function rsbot(...args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-    return new Promise((resolve) => {
-        const proc = spawn('bun', [RSBOT_CLI, '--bot', BOT_NAME, ...args], {
-            cwd: join(import.meta.dir, '..'),
-        });
-
-        let stdout = '';
-        let stderr = '';
-
-        proc.stdout.on('data', (data) => {
-            stdout += data.toString();
-        });
-
-        proc.stderr.on('data', (data) => {
-            stderr += data.toString();
-        });
-
-        proc.on('close', (code) => {
-            resolve({ stdout: stdout.trim(), stderr: stderr.trim(), exitCode: code ?? 0 });
-        });
-
-        proc.on('error', (err) => {
-            stderr += err.message;
-            resolve({ stdout, stderr, exitCode: 1 });
-        });
-    });
-}
+// rsbot function - will be set from session
+let rsbot: (...args: string[]) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
 
 // Get player position via CLI
 async function getPlayerPosition(): Promise<{ x: number; z: number } | null> {
@@ -305,24 +281,99 @@ async function setCombatStyle(style: number): Promise<boolean> {
     return result.stdout.includes('Success');
 }
 
+// Get combat skill levels via CLI
+async function getCombatStats(): Promise<{ attack: number; strength: number; defence: number } | null> {
+    const result = await rsbot('skills');
+    if (result.exitCode !== 0 || result.stdout.includes('Not available')) {
+        return null;
+    }
+
+    const stats = { attack: 1, strength: 1, defence: 1 };
+    const lines = result.stdout.split('\n');
+
+    for (const line of lines) {
+        // Parse lines like "  Attack: 10/10 (1,154 xp)"
+        const match = line.match(/^\s*(Attack|Strength|Defence):\s*(\d+)\/(\d+)/i);
+        if (match) {
+            const skill = match[1].toLowerCase();
+            const baseLevel = parseInt(match[3]); // Use base level, not boosted
+            if (skill === 'attack') stats.attack = baseLevel;
+            else if (skill === 'strength') stats.strength = baseLevel;
+            else if (skill === 'defence') stats.defence = baseLevel;
+        }
+    }
+
+    return stats;
+}
+
+// Get the best style for auto-balancing with 2:1 preference for atk/str over def
+async function getAutoBalanceStyle(): Promise<{ style: number; reason: string }> {
+    const stats = await getCombatStats();
+    if (!stats) {
+        return { style: COMBAT_STYLES.strength, reason: 'Stats unavailable, defaulting to Strength' };
+    }
+
+    // Apply weight to defence - it needs to be significantly lower to be trained
+    // With DEFENCE_WEIGHT = 2.0, defence at level 5 is treated like level 10 for comparison
+    const effectiveDefence = stats.defence * DEFENCE_WEIGHT;
+
+    // Find the lowest stat (with defence weighted)
+    const effectiveLevels = {
+        attack: stats.attack,
+        strength: stats.strength,
+        defence: effectiveDefence
+    };
+
+    const minEffective = Math.min(effectiveLevels.attack, effectiveLevels.strength, effectiveLevels.defence);
+
+    // Determine which stat(s) are at the minimum
+    const atMin = {
+        attack: effectiveLevels.attack === minEffective,
+        strength: effectiveLevels.strength === minEffective,
+        defence: effectiveLevels.defence === minEffective
+    };
+
+    // Priority: if multiple are tied, prefer strength > attack > defence
+    let style: number;
+    let reason: string;
+
+    if (atMin.strength) {
+        style = COMBAT_STYLES.strength;
+        reason = `Training Strength (lowest: Atk=${stats.attack}, Str=${stats.strength}, Def=${stats.defence})`;
+    } else if (atMin.attack) {
+        style = COMBAT_STYLES.attack;
+        reason = `Training Attack (lowest: Atk=${stats.attack}, Str=${stats.strength}, Def=${stats.defence})`;
+    } else {
+        style = COMBAT_STYLES.defence;
+        reason = `Training Defence (lowest after 2:1 weight: Atk=${stats.attack}, Str=${stats.strength}, Def=${stats.defence})`;
+    }
+
+    return { style, reason };
+}
+
 // Get the style index for the desired training mode
-function getStyleForTraining(trainMode: string, turnCount: number): number {
+async function getStyleForTraining(trainMode: string, turnCount: number): Promise<{ style: number; reason: string }> {
     switch (trainMode) {
         case 'attack':
-            return COMBAT_STYLES.attack;
+            return { style: COMBAT_STYLES.attack, reason: 'Training Attack (fixed)' };
         case 'strength':
-            return COMBAT_STYLES.strength;
+            return { style: COMBAT_STYLES.strength, reason: 'Training Strength (fixed)' };
         case 'defence':
         case 'defense':
-            return COMBAT_STYLES.defence;
+            return { style: COMBAT_STYLES.defence, reason: 'Training Defence (fixed)' };
         case 'controlled':
         case 'shared':
-            return COMBAT_STYLES.controlled;
-        case 'cycle':
-        default:
+            return { style: COMBAT_STYLES.controlled, reason: 'Training Controlled (shared)' };
+        case 'cycle': {
             // Cycle through attack -> strength -> defence every STYLE_SWITCH_INTERVAL turns
             const cyclePosition = Math.floor(turnCount / STYLE_SWITCH_INTERVAL) % 3;
-            return cyclePosition; // 0 = attack, 1 = strength, 2 = defence
+            const styleName = ['Attack', 'Strength', 'Defence'][cyclePosition];
+            return { style: cyclePosition, reason: `Cycling: ${styleName}` };
+        }
+        case 'auto':
+        case 'balance':
+        default:
+            return await getAutoBalanceStyle();
     }
 }
 
@@ -426,9 +477,66 @@ function findShieldItem(inventory: any[]): any | null {
     );
 }
 
-// Find attackable NPCs (rats or humans)
+// Debug flag for ground items logging
+let groundItemsDebugLogged = false;
+
+// Get nearby ground items via CLI
+async function getGroundItems(): Promise<any[]> {
+    const result = await rsbot('ground');
+    const items: any[] = [];
+    const lines = result.stdout.split('\n');
+
+    // Debug: log raw output on first call when items found
+    if (!groundItemsDebugLogged && result.stdout && !result.stdout.includes('No ground items')) {
+        console.log(`  [DEBUG] Ground items raw output: ${result.stdout.substring(0, 300)}`);
+        groundItemsDebugLogged = true;
+    }
+
+    for (const line of lines) {
+        // Format: "  Bones x1 at (3222, 3218) - 2 tiles (id: 526)"
+        const match = line.match(/^\s*(.+?)\s+x(\d+)\s+at\s+\((\d+),\s*(\d+)\)\s+-\s+(\d+)\s+tiles\s+\(id:\s*(\d+)\)/);
+        if (match) {
+            items.push({
+                name: match[1].trim(),
+                count: parseInt(match[2]),
+                x: parseInt(match[3]),
+                z: parseInt(match[4]),
+                distance: parseInt(match[5]),
+                id: parseInt(match[6])
+            });
+        }
+    }
+    return items;
+}
+
+// Pick up ground item via CLI
+async function pickupItem(x: number, z: number, itemId: number): Promise<boolean> {
+    const result = await rsbot('action', 'pickup', x.toString(), z.toString(), itemId.toString(), '--wait');
+    return result.stdout.includes('Success');
+}
+
+// Find bones on the ground
+function findBonesOnGround(groundItems: any[]): any | null {
+    // Look for bones items - bones have id 526 (regular bones)
+    return groundItems.find(item =>
+        item.name.toLowerCase().includes('bones') && item.distance <= 10
+    );
+}
+
+// Find bones in inventory
+function findBonesInInventory(inventory: any[]): any | null {
+    return inventory.find(item => item.name.toLowerCase().includes('bones'));
+}
+
+// Bury bones from inventory (option 1 = Bury)
+async function buryBones(slot: number): Promise<boolean> {
+    const result = await rsbot('action', 'use-item', slot.toString(), '1', '--wait');
+    return result.stdout.includes('Success');
+}
+
+// Find attackable NPCs (prioritize men for bones)
 function findAttackableNpc(npcs: any[]): any | null {
-    const targetNames = ['rat', 'man', 'woman', 'guard', 'goblin', 'chicken'];
+    const targetNames = ['man', 'woman', 'rat', 'guard', 'goblin', 'chicken'];
 
     // Prioritize by name, then by distance
     for (const targetName of targetNames) {
@@ -448,21 +556,13 @@ function findAttackableNpc(npcs: any[]): any | null {
     );
 }
 
-async function runCombatTraining(): Promise<void> {
-    console.log(`\n=== Combat Training Test (CLI) ===`);
-    console.log(`Bot Name: ${BOT_NAME}`);
+async function runCombatTraining(): Promise<boolean> {
+    console.log(`\n=== Combat Training Test ===`);
     console.log(`Training Style: ${TRAIN_STYLE}`);
     console.log(`Max Combat Turns: ${MAX_COMBAT_TURNS}`);
-    console.log(`Style Switch Interval: ${STYLE_SWITCH_INTERVAL} turns`);
-    console.log(`Eat Health Threshold: ${EAT_HEALTH_THRESHOLD}`);
-    console.log(`Run Directory: ${RUN_DIR}`);
-    console.log(`\nThis test uses Puppeteer to connect, but rsbot CLI for all actions.\n`);
-
-    await ensureDir(RUN_DIR);
-    await ensureDir(SCREENSHOT_DIR);
 
     const result: CombatResult = {
-        botName: BOT_NAME,
+        botName: '',
         startTime: new Date().toISOString(),
         endTime: '',
         success: false,
@@ -479,81 +579,53 @@ async function runCombatTraining(): Promise<void> {
             ratsKilled: 0,
             humansKilled: 0,
             foodEaten: 0,
-            damageTaken: 0
+            damageTaken: 0,
+            bonesPickedUp: 0,
+            bonesBuried: 0
+        },
+        skillLevels: {
+            initialAttack: 1,
+            initialStrength: 1,
+            initialDefence: 1,
+            finalAttack: 1,
+            finalStrength: 1,
+            finalDefence: 1,
+            gainedAttackLevel: false,
+            gainedStrengthLevel: false,
+            gainedDefenceLevel: false
         },
         turns: []
     };
 
-    let browser: Browser | null = null;
     let lastHealth = 10;
     let currentCombatStyle = 0;
+    let session: BotSession | null = null;
 
     try {
-        // Launch browser
-        console.log('Launching browser (non-headless)...');
-        browser = await puppeteer.launch({
-            headless: false,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
-            defaultViewport: { width: 1024, height: 768 }
-        });
+        // Setup bot and skip tutorial
+        console.log('Setting up bot and skipping tutorial...');
+        session = await setupBotWithTutorialSkip(BOT_NAME);
+        rsbot = session.rsbotCompat;
+        const page = session.page;
+        result.botName = session.botName;
 
-        const page = await browser.newPage();
-        page.on('console', msg => {
-            const text = msg.text();
-            if (text.includes('[Combat]') || text.includes('[Attack]') || text.includes('[Sync]')) {
-                console.log(`[PAGE] ${text}`);
-            }
-        });
+        // Now set up run directory with actual bot name
+        const RUN_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+        RUN_DIR = join(import.meta.dir, '..', 'runs', `${RUN_TIMESTAMP}-combat-training-${session.botName}`);
+        SCREENSHOT_DIR = join(RUN_DIR, 'screenshots');
+        await ensureDir(RUN_DIR);
+        await ensureDir(SCREENSHOT_DIR);
 
-        // Navigate with bot name in URL
-        const botClientUrl = `${BOT_CLIENT_BASE_URL}?bot=${BOT_NAME}`;
-        console.log(`Navigating to ${botClientUrl}...`);
-        await page.goto(botClientUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-        await takeScreenshot(page, '00-loaded');
+        console.log(`Bot ${session.botName} ready in Lumbridge!`);
 
-        if (!await waitForClientReady(page)) throw new Error('Client failed to initialize');
-
-        console.log(`Logging in as: ${BOT_NAME}`);
-        await login(page, BOT_NAME);
-
-        if (!await waitForInGame(page)) throw new Error('Failed to enter game');
-        await takeScreenshot(page, '01-ingame');
-        console.log('In game!');
-
-        await sleep(2000);
-
-        // Wait for sync service
-        console.log('Waiting for sync service connection...');
-        if (!await waitForSyncConnection()) {
-            console.log('WARNING: Sync service not connected');
-        } else {
-            console.log('Sync service connected!');
+        // Record initial combat skill levels
+        const initialStats = await getCombatStats();
+        if (initialStats) {
+            result.skillLevels.initialAttack = initialStats.attack;
+            result.skillLevels.initialStrength = initialStats.strength;
+            result.skillLevels.initialDefence = initialStats.defence;
+            console.log(`Initial Combat Levels: Attack=${initialStats.attack}, Strength=${initialStats.strength}, Defence=${initialStats.defence}`);
         }
-
-        // Skip tutorial if needed
-        if (await isInTutorial()) {
-            console.log('\n--- Skipping Tutorial (via CLI) ---');
-            if (await acceptDesign()) {
-                console.log('Accepted character design (via CLI)');
-                await sleep(1000);
-            }
-
-            let tutorialTurns = 0;
-            while (await isInTutorial() && tutorialTurns < 30) {
-                const skipResult = await skipTutorial();
-                console.log(`  Tutorial skip attempt ${tutorialTurns + 1}: ${skipResult.message}`);
-                await sleep(1000);
-                tutorialTurns++;
-            }
-
-            if (await isInTutorial()) {
-                throw new Error('Failed to skip tutorial');
-            }
-            console.log('Tutorial completed!');
-        } else {
-            console.log('\n--- Already past Tutorial Island ---');
-        }
-        await takeScreenshot(page, '02-tutorial-done');
 
         // Step 1: Equip sword and shield
         console.log('\n--- Step 1: Equip Sword and Shield (via CLI) ---');
@@ -603,14 +675,15 @@ async function runCombatTraining(): Promise<void> {
         }
 
         // Step 2: Set initial combat style
-        console.log(`\n--- Step 2: Setting Combat Style ---`);
-        const desiredStyle = getStyleForTraining(TRAIN_STYLE, 0);
+        console.log(`\n--- Step 2: Setting Combat Style (mode: ${TRAIN_STYLE}) ---`);
         const styleNames = ['Accurate (Attack)', 'Aggressive (Strength)', 'Defensive (Defence)', 'Controlled (Shared)'];
-        console.log(`  Desired style: ${styleNames[desiredStyle]}`);
+        const initialStyleResult = await getStyleForTraining(TRAIN_STYLE, 0);
+        console.log(`  ${initialStyleResult.reason}`);
+        console.log(`  Desired style: ${styleNames[initialStyleResult.style]}`);
 
-        const styleSet = await setCombatStyle(desiredStyle);
+        const styleSet = await setCombatStyle(initialStyleResult.style);
         if (styleSet) {
-            currentCombatStyle = desiredStyle;
+            currentCombatStyle = initialStyleResult.style;
             result.combatStyle.styleChanges++;
             console.log(`  Combat style set!`);
         } else {
@@ -622,6 +695,7 @@ async function runCombatTraining(): Promise<void> {
         console.log(`\n--- Step 3: Combat Training (${MAX_COMBAT_TURNS} turns max) ---`);
 
         let currentTarget: string | null = null;
+        let lastKillTurn = 0; // Track when we last started an attack (potential kill)
 
         for (let turn = 1; turn <= MAX_COMBAT_TURNS; turn++) {
             const turnRecord: TurnRecord = {
@@ -632,19 +706,42 @@ async function runCombatTraining(): Promise<void> {
                 result: ''
             };
 
+            // Check for early exit - if all 3 combat skills gained a level
+            if (turn % 10 === 0) {
+                const currentStats = await getCombatStats();
+                if (currentStats) {
+                    const gainedAtk = currentStats.attack > result.skillLevels.initialAttack;
+                    const gainedStr = currentStats.strength > result.skillLevels.initialStrength;
+                    const gainedDef = currentStats.defence > result.skillLevels.initialDefence;
+                    if (gainedAtk && gainedStr && gainedDef) {
+                        console.log(`  Turn ${turn}: SUCCESS - Gained levels in all 3 combat skills!`);
+                        console.log(`    Attack: ${result.skillLevels.initialAttack} -> ${currentStats.attack}`);
+                        console.log(`    Strength: ${result.skillLevels.initialStrength} -> ${currentStats.strength}`);
+                        console.log(`    Defence: ${result.skillLevels.initialDefence} -> ${currentStats.defence}`);
+                        break;
+                    }
+                }
+            }
+
             // Track style turns
             if (currentCombatStyle === 0) result.combatStyle.attackTurns++;
             else if (currentCombatStyle === 1) result.combatStyle.strengthTurns++;
             else if (currentCombatStyle === 2) result.combatStyle.defenceTurns++;
 
-            // Check if we need to switch combat style (for cycling mode)
-            if (TRAIN_STYLE === 'cycle') {
-                const newStyle = getStyleForTraining(TRAIN_STYLE, turn);
-                if (newStyle !== currentCombatStyle) {
-                    console.log(`  Turn ${turn}: Switching combat style to ${styleNames[newStyle]}`);
-                    const switched = await setCombatStyle(newStyle);
+            // Check if we need to switch combat style
+            // For cycle mode: switch at fixed intervals
+            // For auto/balance mode: re-check stats periodically to train lowest
+            const shouldCheckStyle = (TRAIN_STYLE === 'cycle' && turn % STYLE_SWITCH_INTERVAL === 0) ||
+                                    ((TRAIN_STYLE === 'auto' || TRAIN_STYLE === 'balance') && turn % 10 === 0);
+
+            if (shouldCheckStyle) {
+                const styleResult = await getStyleForTraining(TRAIN_STYLE, turn);
+                if (styleResult.style !== currentCombatStyle) {
+                    console.log(`  Turn ${turn}: ${styleResult.reason}`);
+                    console.log(`  Switching to ${styleNames[styleResult.style]}`);
+                    const switched = await setCombatStyle(styleResult.style);
                     if (switched) {
-                        currentCombatStyle = newStyle;
+                        currentCombatStyle = styleResult.style;
                         result.combatStyle.styleChanges++;
                     }
                 }
@@ -711,7 +808,53 @@ async function runCombatTraining(): Promise<void> {
                 continue;
             }
 
-            // Not in combat - find a new target
+            // Not in combat - check for bones to pick up or bury first
+            // Step 1: Check if there are bones on the ground to pick up
+            const groundItems = await getGroundItems();
+            const bonesOnGround = findBonesOnGround(groundItems);
+
+            // Debug: log ground items periodically
+            if (turn % 10 === 1 && groundItems.length > 0) {
+                console.log(`  Turn ${turn}: Found ${groundItems.length} ground items: ${groundItems.map(i => i.name).join(', ')}`);
+            }
+
+            if (bonesOnGround) {
+                console.log(`  Turn ${turn}: Picking up ${bonesOnGround.name} at (${bonesOnGround.x}, ${bonesOnGround.z})`);
+                const pickedUp = await pickupItem(bonesOnGround.x, bonesOnGround.z, bonesOnGround.id);
+                if (pickedUp) {
+                    result.combatStats.bonesPickedUp++;
+                    turnRecord.action = `Pick up ${bonesOnGround.name}`;
+                    turnRecord.result = 'Bones picked up';
+                } else {
+                    turnRecord.action = `Pick up ${bonesOnGround.name}`;
+                    turnRecord.result = 'Failed to pick up';
+                }
+                result.turns.push(turnRecord);
+                await sleep(TURN_DELAY_MS);
+                continue;
+            }
+
+            // Step 2: Check if we have bones in inventory to bury
+            const currentInv = await getInventory();
+            const bonesInInv = findBonesInInventory(currentInv);
+
+            if (bonesInInv) {
+                console.log(`  Turn ${turn}: Burying ${bonesInInv.name} from slot ${bonesInInv.slot}`);
+                const buried = await buryBones(bonesInInv.slot);
+                if (buried) {
+                    result.combatStats.bonesBuried++;
+                    turnRecord.action = `Bury ${bonesInInv.name}`;
+                    turnRecord.result = 'Bones buried';
+                } else {
+                    turnRecord.action = `Bury ${bonesInInv.name}`;
+                    turnRecord.result = 'Failed to bury';
+                }
+                result.turns.push(turnRecord);
+                await sleep(TURN_DELAY_MS);
+                continue;
+            }
+
+            // Step 3: Find a new target to attack
             const npcs = await getNearbyNpcs();
             const target = findAttackableNpc(npcs);
 
@@ -729,6 +872,7 @@ async function runCombatTraining(): Promise<void> {
                         currentTarget = target.name;
                         turnRecord.action = `Attack ${target.name}`;
                         turnRecord.result = 'Attack started';
+                        lastKillTurn = turn; // Mark potential kill for bone checking
 
                         // Track kills (simplistic - assume kill if we attacked and target disappears)
                         if (target.name.toLowerCase().includes('rat')) {
@@ -774,8 +918,21 @@ async function runCombatTraining(): Promise<void> {
             await sleep(TURN_DELAY_MS);
         }
 
-        // Final stats
-        result.success = result.combatStats.totalKills > 0 || result.equipped.sword || result.equipped.shield;
+        // Get final skill levels
+        const finalStats = await getCombatStats();
+        if (finalStats) {
+            result.skillLevels.finalAttack = finalStats.attack;
+            result.skillLevels.finalStrength = finalStats.strength;
+            result.skillLevels.finalDefence = finalStats.defence;
+            result.skillLevels.gainedAttackLevel = finalStats.attack > result.skillLevels.initialAttack;
+            result.skillLevels.gainedStrengthLevel = finalStats.strength > result.skillLevels.initialStrength;
+            result.skillLevels.gainedDefenceLevel = finalStats.defence > result.skillLevels.initialDefence;
+        }
+
+        // Success criteria: gain at least 1 level in ALL combat skills (Attack, Strength, AND Defence)
+        result.success = result.skillLevels.gainedAttackLevel &&
+                        result.skillLevels.gainedStrengthLevel &&
+                        result.skillLevels.gainedDefenceLevel;
 
         console.log(`\n--- Combat Training Complete ---`);
         console.log(`Equipped: Sword=${result.equipped.sword}, Shield=${result.equipped.shield}`);
@@ -784,19 +941,28 @@ async function runCombatTraining(): Promise<void> {
         console.log(`  Humans: ${result.combatStats.humansKilled}`);
         console.log(`Food Eaten: ${result.combatStats.foodEaten}`);
         console.log(`Damage Taken: ${result.combatStats.damageTaken}`);
+        console.log(`Bones Picked Up: ${result.combatStats.bonesPickedUp}`);
+        console.log(`Bones Buried: ${result.combatStats.bonesBuried}`);
         console.log(`\nCombat Style Training:`);
         console.log(`  Training Mode: ${result.combatStyle.trainMode}`);
         console.log(`  Style Changes: ${result.combatStyle.styleChanges}`);
         console.log(`  Attack Turns: ${result.combatStyle.attackTurns}`);
         console.log(`  Strength Turns: ${result.combatStyle.strengthTurns}`);
         console.log(`  Defence Turns: ${result.combatStyle.defenceTurns}`);
+        console.log(`\nSkill Progress:`);
+        console.log(`  Attack: ${result.skillLevels.initialAttack} -> ${result.skillLevels.finalAttack} (Gained level: ${result.skillLevels.gainedAttackLevel})`);
+        console.log(`  Strength: ${result.skillLevels.initialStrength} -> ${result.skillLevels.finalStrength} (Gained level: ${result.skillLevels.gainedStrengthLevel})`);
+        console.log(`  Defence: ${result.skillLevels.initialDefence} -> ${result.skillLevels.finalDefence} (Gained level: ${result.skillLevels.gainedDefenceLevel})`);
+        console.log(`\nSuccess Criteria: Gain at least 1 level in Attack, Strength, AND Defence`);
+        console.log(`Success: ${result.success}`);
 
         await takeScreenshot(page, '99-final');
+
+        return result.success;
 
     } catch (error) {
         console.error('Combat training failed:', error);
         result.error = String(error);
-    } finally {
         result.endTime = new Date().toISOString();
 
         // Save results
@@ -804,16 +970,33 @@ async function runCombatTraining(): Promise<void> {
         await writeFile(resultPath, JSON.stringify(result, null, 2));
         console.log(`\nResults saved to: ${resultPath}`);
 
-        if (browser) {
-            console.log('\nBrowser will close in 10 seconds...');
-            await sleep(10000);
-            await browser.close();
-        }
+        if (session) await session.cleanup();
+        return false;
     }
+
+    result.endTime = new Date().toISOString();
+
+    // Save results
+    const resultPath = join(RUN_DIR, 'result.json');
+    await writeFile(resultPath, JSON.stringify(result, null, 2));
+    console.log(`\nResults saved to: ${resultPath}`);
+
+    if (session) await session.cleanup();
+    return result.success;
 }
 
 // Run the test
-runCombatTraining().catch(error => {
-    console.error('Fatal error:', error);
-    process.exit(1);
-});
+runCombatTraining()
+    .then(success => {
+        if (success) {
+            console.log('\n✓ Test PASSED: Gained a level in Attack, Strength, AND Defence!');
+            process.exit(0);
+        } else {
+            console.log('\n✗ Test FAILED: Did not gain all 3 combat levels');
+            process.exit(1);
+        }
+    })
+    .catch(error => {
+        console.error('Fatal error:', error);
+        process.exit(1);
+    });
