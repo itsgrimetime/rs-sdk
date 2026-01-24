@@ -541,8 +541,7 @@ Accept either a pattern (\`/sword/i\`) OR an object from \`sdk.find*()\`:
 await bot.chopTree()              // Chops tree, waits for logs
 await bot.chopTree(/oak/i)        // Chops specific tree type
 await bot.burnLogs()              // Burns logs with tinderbox, waits for XP
-await bot.walkTo(3200, 3200)      // Multi-step walk to coordinates
-await bot.walkTo(x, z, 3)         // Walk within 3 tiles tolerance
+await bot.walkTo(3200, 3200)      // Walk to coordinates using pathfinding
 await bot.talkTo(/guide/i)        // Talk to NPC, wait for dialog
 await bot.pickupItem(/coins/i)    // Pick up item, wait for inventory
 await bot.equipItem(/sword/i)     // Equip item from inventory

@@ -45,7 +45,7 @@ async function runTest(): Promise<boolean> {
             }
 
             console.log('No test item found, buying a pot from general store...');
-            await bot.walkTo(LUMBRIDGE_GENERAL_STORE.x, LUMBRIDGE_GENERAL_STORE.z, 3);
+            await bot.walkTo(LUMBRIDGE_GENERAL_STORE.x, LUMBRIDGE_GENERAL_STORE.z);
             await sleep(500);
 
             const openResult = await bot.openShop(/shop\s*keeper/i);
@@ -76,7 +76,7 @@ async function runTest(): Promise<boolean> {
 
         // Walk to Bob's Axes
         console.log("Walking to Bob's Brilliant Axes...");
-        await bot.walkTo(BOBS_AXES.x, BOBS_AXES.z, 3);
+        await bot.walkTo(BOBS_AXES.x, BOBS_AXES.z);
         await sleep(500);
 
         // Open Bob's shop

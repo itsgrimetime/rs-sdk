@@ -151,7 +151,7 @@ async function runTest(): Promise<boolean> {
                 const dx = Math.floor(Math.random() * 16) - 8;
                 const dz = Math.floor(Math.random() * 16) - 8;
                 console.log(`Turn ${turn}: No obstacles found, exploring...`);
-                await bot.walkTo(px + dx, pz + dz, 2);
+                await bot.walkTo(px + dx, pz + dz);
             }
 
             await sleep(600);

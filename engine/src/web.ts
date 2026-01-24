@@ -504,13 +504,13 @@ export async function startWeb() {
                     const waypointsRaw = findLongPath(level, srcX, srcZ, destX, destZ, maxWaypoints);
 
                     // Convert packed waypoints to coordinate objects
-                    // Waypoints are packed as: x | (z << 14) | (level << 28)
+                    // Waypoints are packed as: z | (x << 14) | (level << 28) (see CoordGrid.packCoord)
                     const waypoints: Array<{ x: number; z: number; level: number }> = [];
                     for (let i = 0; i < waypointsRaw.length; i++) {
                         const packed = waypointsRaw[i];
                         waypoints.push({
-                            x: packed & 0x3FFF,
-                            z: (packed >> 14) & 0x3FFF,
+                            z: packed & 0x3FFF,
+                            x: (packed >> 14) & 0x3FFF,
                             level: (packed >> 28) & 0x3
                         });
                     }

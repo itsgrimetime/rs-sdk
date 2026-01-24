@@ -19,7 +19,7 @@ export interface SDKConfig {
     botUsername: string;
     host?: string;           // Default: 'localhost'
     port?: number;           // Default: 7780 (gateway port)
-    webPort?: number;        // Default: 80 (game server web API port)
+    webPort?: number;        // Default: 8888 (game server web API port)
     actionTimeout?: number;  // Default: 30000ms
 }
 
@@ -43,7 +43,7 @@ export class BotSDK {
             botUsername: config.botUsername,
             host: config.host || 'localhost',
             port: config.port || 7780,
-            webPort: config.webPort || 80,
+            webPort: config.webPort || 8888,  // Game server web API port
             actionTimeout: config.actionTimeout || 30000
         };
         this.sdkClientId = `sdk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

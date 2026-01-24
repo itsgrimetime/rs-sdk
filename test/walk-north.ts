@@ -43,7 +43,7 @@ async function runTest(): Promise<boolean> {
 
             // Walk north
             const targetZ = currentZ + WALK_STEP;
-            const result = await bot.walkTo(currentX, targetZ, 2);
+            const result = await bot.walkTo(currentX, targetZ);
 
             if (result.success) {
                 const newState = sdk.getState();

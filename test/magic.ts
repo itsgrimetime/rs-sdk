@@ -122,7 +122,7 @@ async function runTest(): Promise<boolean> {
                     const dx = Math.floor(Math.random() * 10) - 5;
                     const dz = Math.floor(Math.random() * 10) - 5;
                     console.log(`Turn ${turn}: No targets, wandering...`);
-                    await bot.walkTo(px + dx, pz + dz, 2);
+                    await bot.walkTo(px + dx, pz + dz);
                 }
             }
 

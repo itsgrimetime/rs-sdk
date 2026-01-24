@@ -168,7 +168,7 @@ async function runTest(): Promise<boolean> {
             // If nothing found, walk closer to dock
             if (turn % 15 === 0 && !ferryman) {
                 console.log(`Turn ${turn}: Walking toward dock...`);
-                await bot.walkTo(PORT_SARIM_DOCK.x, PORT_SARIM_DOCK.z, 5);
+                await bot.walkTo(PORT_SARIM_DOCK.x, PORT_SARIM_DOCK.z);
             }
 
             await sleep(600);

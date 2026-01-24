@@ -68,7 +68,7 @@ async function runTest(): Promise<boolean> {
         let result = { success: false, message: 'No waypoints reached' };
         for (const wp of waypoints) {
             console.log(`  Walking to waypoint (${wp.x}, ${wp.z})...`);
-            result = await bot.walkTo(wp.x, wp.z, 5);
+            result = await bot.walkTo(wp.x, wp.z);
             if (!result.success) {
                 console.log(`  Waypoint failed: ${result.message}`);
                 // Try to continue anyway

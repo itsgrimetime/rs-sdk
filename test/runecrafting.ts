@@ -196,7 +196,7 @@ async function runTest(): Promise<boolean> {
             // Walk toward altar location if nothing found
             if (turn % 20 === 0 && !ruins && !enteredAltar) {
                 console.log(`Turn ${turn}: Walking toward altar ruins...`);
-                await bot.walkTo(AIR_ALTAR_RUINS.x, AIR_ALTAR_RUINS.z, 5);
+                await bot.walkTo(AIR_ALTAR_RUINS.x, AIR_ALTAR_RUINS.z);
             }
 
             await sleep(600);

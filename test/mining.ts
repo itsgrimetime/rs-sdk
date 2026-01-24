@@ -121,7 +121,7 @@ async function runTest(): Promise<boolean> {
                     const pz = currentState?.player?.worldZ ?? 3365;
                     const dx = Math.floor(Math.random() * 10) - 5;
                     const dz = Math.floor(Math.random() * 10) - 5;
-                    await bot.walkTo(px + dx, pz + dz, 2);
+                    await bot.walkTo(px + dx, pz + dz);
                 }
             }
 

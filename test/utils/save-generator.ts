@@ -161,7 +161,8 @@ export const Locations = {
     LUMBRIDGE_CASTLE: { x: 3222, z: 3218 },
     LUMBRIDGE_SPINNING_WHEEL: { x: 3209, z: 3213, level: 2 },  // 2nd floor of castle
     LUMBRIDGE_SHOP: { x: 3212, z: 3246 },
-    DRAYNOR_FISHING: { x: 3086, z: 3230 },
+    ALKHARID_FISHING: { x: 3267, z: 3148 },  // Safe shrimp spot near Al Kharid palace
+    DRAYNOR_FISHING: { x: 3086, z: 3230 },  // WARNING: Near dark wizards!
     VARROCK_SE_MINE: { x: 3285, z: 3365 },
     VARROCK_TEA_STALL: { x: 3269, z: 3410 },  // SE Varrock, near tea stall
     ALKHARID_MINE: { x: 3300, z: 3310 },
@@ -502,7 +503,16 @@ export const TestPresets = {
         ],
     } as SaveConfig,
 
-    // Fisher at Draynor with net
+    // Fisher at Al Kharid with net (safe from enemies)
+    FISHER_AT_ALKHARID: {
+        position: Locations.ALKHARID_FISHING,
+        skills: { Fishing: 1 },
+        inventory: [
+            { id: Items.SMALL_FISHING_NET, count: 1 },
+        ],
+    } as SaveConfig,
+
+    // Fisher at Draynor with net (WARNING: near dark wizards!)
     FISHER_AT_DRAYNOR: {
         position: Locations.DRAYNOR_FISHING,
         skills: { Fishing: 1 },

@@ -85,7 +85,7 @@ export async function runCombatTrainingBot(
     const startX = state0?.player?.worldX ?? 3222;
     const startZ = state0?.player?.worldZ ?? 3218;
     log(`Walking east to goblin/spider area...`);
-    await bot.walkTo(startX + 15, startZ, 3);  // Walk ~15 tiles east
+    await bot.walkTo(startX + 15, startZ);  // Walk ~15 tiles east
     await sleep(2000);
 
     let kills = 0;
@@ -283,7 +283,7 @@ export async function runCombatTrainingBot(
             const dx = Math.floor(Math.random() * 10) - 5;
             const dz = Math.floor(Math.random() * 10) - 5;
             log(`Turn ${turn}: No targets, wandering...`);
-            await bot.walkTo(px + dx, pz + dz, 2);
+            await bot.walkTo(px + dx, pz + dz);
         }
 
         await sleep(600);

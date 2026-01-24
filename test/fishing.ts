@@ -16,8 +16,8 @@ async function runTest(): Promise<boolean> {
     console.log('=== Fishing Test (SDK) ===');
     console.log('Goal: Catch fish to gain Fishing XP');
 
-    // Spawn at Draynor fishing spot with net
-    await generateSave(BOT_NAME, TestPresets.FISHER_AT_DRAYNOR);
+    // Spawn at Al Kharid fishing spot with net (safe from dark wizards)
+    await generateSave(BOT_NAME, TestPresets.FISHER_AT_ALKHARID);
 
     let session: SDKSession | null = null;
 
@@ -106,7 +106,7 @@ async function runTest(): Promise<boolean> {
                     const pz = currentState?.player?.worldZ ?? 3230;
                     const dx = Math.floor(Math.random() * 6) - 3;
                     const dz = Math.floor(Math.random() * 6) - 3;
-                    await bot.walkTo(px + dx, pz + dz, 2);
+                    await bot.walkTo(px + dx, pz + dz);
                 }
             }
 

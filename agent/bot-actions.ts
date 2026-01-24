@@ -166,7 +166,7 @@ export class BotActions {
         // If door is too far, walk to it first
         // Most doors require being within 1-2 tiles to interact
         if (door.distance > 2) {
-            const walkResult = await this.walkTo(door.x, door.z, 1);
+            const walkResult = await this.walkTo(door.x, door.z);
             if (!walkResult.success) {
                 return {
                     success: false,
@@ -554,100 +554,23 @@ export class BotActions {
     }
 
     /**
-     * Walks to a location and waits until the player arrives (or gets close enough).
-     */
-    async walkTo(x: number, z: number, tolerance: number = 1): Promise<ActionResult> {
-        const MAX_STEP = 15; // Max tiles per walk command
-        const MAX_ATTEMPTS = 100; // More attempts for longer walks
-
-        let consecutiveFailures = 0;
-        for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-            const state = this.sdk.getState();
-            if (!state?.player) {
-                return { success: false, message: 'No player state' };
-            }
-
-            const px = state.player.worldX;
-            const pz = state.player.worldZ;
-            const dx = x - px;
-            const dz = z - pz;
-            const dist = Math.sqrt(dx * dx + dz * dz);
-
-            // Close enough?
-            if (dist <= tolerance) {
-                return { success: true, message: `Arrived at (${x}, ${z})` };
-            }
-
-            // Calculate intermediate target (move MAX_STEP tiles toward goal)
-            let targetX = x;
-            let targetZ = z;
-            if (dist > MAX_STEP) {
-                const ratio = MAX_STEP / dist;
-                targetX = Math.round(px + dx * ratio);
-                targetZ = Math.round(pz + dz * ratio);
-            }
-
-            // Send walk command
-            const result = await this.sdk.sendWalk(targetX, targetZ);
-            if (!result.success) {
-                consecutiveFailures++;
-                if (consecutiveFailures >= 3) {
-                    return result;
-                }
-                // Small delay and retry
-                await new Promise(r => setTimeout(r, 500));
-                continue;
-            }
-            consecutiveFailures = 0;
-
-            // Wait until we've moved (or timeout)
-            try {
-                await this.sdk.waitForCondition(s => {
-                    if (!s.player) return false;
-                    const newDx = Math.abs(s.player.worldX - targetX);
-                    const newDz = Math.abs(s.player.worldZ - targetZ);
-                    return (newDx <= 2 && newDz <= 2);
-                }, 10000);
-            } catch {
-                // Timeout - check if we moved
-                const afterState = this.sdk.getState();
-                if (afterState?.player?.worldX === px && afterState?.player?.worldZ === pz) {
-                    // Didn't move at all - might be blocked, try smaller steps
-                    for (const [ddx, ddz] of [[0, -5], [5, 0], [0, 5], [-5, 0]]) {
-                        await this.sdk.sendWalk(px + ddx, pz + ddz).catch(() => {});
-                        await new Promise(r => setTimeout(r, 2000));
-                        const newState = this.sdk.getState();
-                        if (newState?.player?.worldX !== px || newState?.player?.worldZ !== pz) {
-                            break; // We moved!
-                        }
-                    }
-                }
-            }
-        }
-
-        return { success: false, message: 'Max walk attempts exceeded' };
-    }
-
-    /**
-     * Navigates to a distant location using server-side pathfinding.
-     * Uses the rsmod WASM pathfinder which has access to the full collision map.
-     * This is ideal for long-distance navigation (100+ tiles).
+     * Walks to a location using server-side pathfinding.
+     * Uses the rsmod WASM pathfinder which has access to the full collision map,
+     * so it automatically navigates around obstacles like walls and buildings.
+     *
+     * Works for any distance - short walks and long city-to-city journeys.
+     * For very long distances beyond the pathfinder's search radius (~100 tiles),
+     * it will re-query after making progress.
      *
      * @param x - Destination world X coordinate
      * @param z - Destination world Z coordinate
-     * @param tolerance - How close to destination is acceptable (default: 5)
-     * @param maxWaypoints - Maximum waypoints to calculate (default: 500)
      *
      * Note: This does NOT handle doors, stairs, or teleports. If the path
      * is blocked by a closed door, use openDoor() first. For multi-level
      * navigation, call this separately for each floor.
      */
-    async navigateTo(
-        x: number,
-        z: number,
-        tolerance: number = 5,
-        maxWaypoints: number = 500
-    ): Promise<ActionResult & { waypointsUsed?: number; tilesWalked?: number }> {
+    async walkTo(x: number, z: number): Promise<ActionResult> {
+        const tolerance = 3;
         const startState = this.sdk.getState();
         if (!startState?.player) {
             return { success: false, message: 'No player state' };
@@ -659,94 +582,133 @@ export class BotActions {
         // Check if already at destination
         const startDist = Math.sqrt(Math.pow(x - startX, 2) + Math.pow(z - startZ, 2));
         if (startDist <= tolerance) {
-            return { success: true, message: `Already at destination (${x}, ${z})`, waypointsUsed: 0, tilesWalked: 0 };
+            return { success: true, message: `Already at (${x}, ${z})` };
         }
 
-        // Get server-side path
-        const pathResult = await this.sdk.sendFindPath(x, z, maxWaypoints);
-        if (!pathResult.success || pathResult.waypoints.length === 0) {
-            return {
-                success: false,
-                message: pathResult.error || `No path found to (${x}, ${z})`,
-                waypointsUsed: 0,
-                tilesWalked: 0
-            };
-        }
+        const MAX_PATH_QUERIES = 20;
+        let stuckCount = 0;
 
-        const waypoints = pathResult.waypoints;
-        let waypointsUsed = 0;
-        let lastX = startX;
-        let lastZ = startZ;
+        for (let query = 0; query < MAX_PATH_QUERIES; query++) {
+            const currentState = this.sdk.getState();
+            if (!currentState?.player) {
+                return { success: false, message: 'Lost player state' };
+            }
 
-        // Walk through waypoints, sampling every N waypoints to reduce walk commands
-        // We don't need to visit every single tile - just key waypoints
-        const WAYPOINT_STEP = 10; // Walk to every 10th waypoint
+            const currentX = currentState.player.worldX;
+            const currentZ = currentState.player.worldZ;
 
-        for (let i = WAYPOINT_STEP - 1; i < waypoints.length; i += WAYPOINT_STEP) {
-            const wp = waypoints[Math.min(i, waypoints.length - 1)];
+            // Check if we've arrived
+            const distToGoal = Math.sqrt(Math.pow(x - currentX, 2) + Math.pow(z - currentZ, 2));
+            if (distToGoal <= tolerance) {
+                return { success: true, message: `Arrived at (${currentX}, ${currentZ})` };
+            }
 
-            // Walk to this waypoint
-            const walkResult = await this.walkTo(wp.x, wp.z, 3);
-            waypointsUsed++;
+            // Ask pathfinder for path to destination
+            let pathResult = await this.sdk.sendFindPath(x, z, 500);
 
-            if (!walkResult.success) {
-                // Check if we made progress
-                const currentState = this.sdk.getState();
-                const currentX = currentState?.player?.worldX || lastX;
-                const currentZ = currentState?.player?.worldZ || lastZ;
-                const currentDist = Math.sqrt(Math.pow(x - currentX, 2) + Math.pow(z - currentZ, 2));
+            // If destination is too far (pathfinder has ~100 tile search radius),
+            // calculate a closer intermediate target in the direction of the goal
+            if ((!pathResult.waypoints || pathResult.waypoints.length === 0) && distToGoal > 60) {
+                const INTERMEDIATE_DIST = 60;
+                const ratio = INTERMEDIATE_DIST / distToGoal;
+                const intermediateX = Math.round(currentX + (x - currentX) * ratio);
+                const intermediateZ = Math.round(currentZ + (z - currentZ) * ratio);
+                pathResult = await this.sdk.sendFindPath(intermediateX, intermediateZ, 500);
+            }
 
-                if (currentDist <= tolerance) {
-                    // Close enough!
-                    return {
-                        success: true,
-                        message: `Arrived near destination (${currentX}, ${currentZ})`,
-                        waypointsUsed,
-                        tilesWalked: Math.abs(currentX - startX) + Math.abs(currentZ - startZ)
-                    };
+            if (!pathResult.success || !pathResult.waypoints || pathResult.waypoints.length === 0) {
+                // No path found - try a direct walk command as last resort
+                await this.sdk.sendWalk(x, z, true);
+                try {
+                    await this.sdk.waitForCondition(s => {
+                        if (!s.player) return false;
+                        const d = Math.sqrt(Math.pow(x - s.player.worldX, 2) + Math.pow(z - s.player.worldZ, 2));
+                        return d <= tolerance;
+                    }, 10000);
+                    return { success: true, message: `Arrived at (${x}, ${z})` };
+                } catch {
+                    return { success: false, message: `No path found to (${x}, ${z})` };
+                }
+            }
+
+            const waypoints = pathResult.waypoints;
+
+            // Follow waypoints from the path
+            // Walk to every 5th waypoint (~5 tiles) for efficiency while staying on path
+            const WAYPOINT_STEP = 5;
+            for (let wpIndex = Math.min(WAYPOINT_STEP - 1, waypoints.length - 1); wpIndex < waypoints.length; wpIndex += WAYPOINT_STEP) {
+                const wp = waypoints[wpIndex];
+                await this.sdk.sendWalk(wp.x, wp.z, true);
+
+                try {
+                    await this.sdk.waitForCondition(s => {
+                        if (!s.player) return false;
+                        const dx = Math.abs(s.player.worldX - wp.x);
+                        const dz = Math.abs(s.player.worldZ - wp.z);
+                        return dx <= 3 && dz <= 3;
+                    }, 5000);
+                } catch {
+                    // Timeout - continue anyway
                 }
 
-                // Might be blocked - return partial progress
-                return {
-                    success: false,
-                    message: `Blocked at (${currentX}, ${currentZ}): ${walkResult.message}`,
-                    waypointsUsed,
-                    tilesWalked: Math.abs(currentX - startX) + Math.abs(currentZ - startZ)
-                };
+                const checkState = this.sdk.getState();
+                if (!checkState?.player) {
+                    return { success: false, message: 'Lost connection during walk' };
+                }
+
+                // Check if we've arrived at final destination
+                const newDist = Math.sqrt(Math.pow(x - checkState.player.worldX, 2) + Math.pow(z - checkState.player.worldZ, 2));
+                if (newDist <= tolerance) {
+                    return { success: true, message: `Arrived at (${checkState.player.worldX}, ${checkState.player.worldZ})` };
+                }
             }
 
-            const afterState = this.sdk.getState();
-            lastX = afterState?.player?.worldX || lastX;
-            lastZ = afterState?.player?.worldZ || lastZ;
+            // Walk to the last waypoint
+            const lastWp = waypoints[waypoints.length - 1];
+            await this.sdk.sendWalk(lastWp.x, lastWp.z, true);
+            try {
+                await this.sdk.waitForCondition(s => {
+                    if (!s.player) return false;
+                    const dx = Math.abs(s.player.worldX - lastWp.x);
+                    const dz = Math.abs(s.player.worldZ - lastWp.z);
+                    return dx <= 3 && dz <= 3;
+                }, 5000);
+            } catch {
+                // Continue even if we don't reach exactly
+            }
 
-            // Check if we're close enough to final destination
-            const distToGoal = Math.sqrt(Math.pow(x - lastX, 2) + Math.pow(z - lastZ, 2));
-            if (distToGoal <= tolerance) {
-                return {
-                    success: true,
-                    message: `Arrived at (${lastX}, ${lastZ})`,
-                    waypointsUsed,
-                    tilesWalked: Math.abs(lastX - startX) + Math.abs(lastZ - startZ)
-                };
+            // Check progress
+            const afterState = this.sdk.getState();
+            const afterX = afterState?.player?.worldX ?? currentX;
+            const afterZ = afterState?.player?.worldZ ?? currentZ;
+            const newDistToGoal = Math.sqrt(Math.pow(x - afterX, 2) + Math.pow(z - afterZ, 2));
+
+            if (newDistToGoal <= tolerance) {
+                return { success: true, message: `Arrived at (${afterX}, ${afterZ})` };
+            }
+
+            // Check if we made progress
+            const progressMade = distToGoal - newDistToGoal;
+            if (progressMade < 5) {
+                stuckCount++;
+                if (stuckCount >= 3) {
+                    return { success: false, message: `Stuck at (${afterX}, ${afterZ}) - cannot reach (${x}, ${z})` };
+                }
+            } else {
+                stuckCount = 0;
             }
         }
 
-        // Walk to final destination
-        const finalWalk = await this.walkTo(x, z, tolerance);
-        waypointsUsed++;
-
         const finalState = this.sdk.getState();
-        const finalX = finalState?.player?.worldX || lastX;
-        const finalZ = finalState?.player?.worldZ || lastZ;
+        const finalX = finalState?.player?.worldX ?? startX;
+        const finalZ = finalState?.player?.worldZ ?? startZ;
         const finalDist = Math.sqrt(Math.pow(x - finalX, 2) + Math.pow(z - finalZ, 2));
 
         return {
             success: finalDist <= tolerance,
             message: finalDist <= tolerance
                 ? `Arrived at (${finalX}, ${finalZ})`
-                : `Stopped at (${finalX}, ${finalZ}), ${Math.round(finalDist)} tiles from destination`,
-            waypointsUsed,
-            tilesWalked: Math.abs(finalX - startX) + Math.abs(finalZ - startZ)
+                : `Could not reach (${x}, ${z}) - stopped at (${finalX}, ${finalZ})`
         };
     }
 

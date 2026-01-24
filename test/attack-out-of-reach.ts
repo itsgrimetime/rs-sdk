@@ -57,7 +57,7 @@ async function runTest(): Promise<boolean> {
             console.log('This might mean the spawn position is wrong or cows haven\'t spawned yet.');
             // Try walking closer to the cow field and check again
             console.log('Walking north towards cow field...');
-            await bot.walkTo(OUTSIDE_COW_FIELD.x, OUTSIDE_COW_FIELD.z + 5, 2);
+            await bot.walkTo(OUTSIDE_COW_FIELD.x, OUTSIDE_COW_FIELD.z + 5);
             await sleep(1000);
 
             const retryNpcs = sdk.getNearbyNpcs();

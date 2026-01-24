@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 /**
  * Long-Distance Navigation Test
- * Tests server-side pathfinding via the navigateTo() method.
+ * Tests server-side pathfinding via the walkTo() method.
  *
  * This test validates:
  * - Server-side pathfinding API (/api/findPath)
- * - navigateTo() porcelain method
+ * - walkTo() porcelain method with built-in pathfinding
  * - Long-distance walking using calculated paths
- * - Multiple city-to-city routes
+ * - Navigation around obstacles (e.g., Lumbridge Castle's C-shape)
  */
 
 import { launchBotWithSDK, sleep, type SDKSession } from './utils/browser';
@@ -56,80 +56,75 @@ interface RouteResult {
     name: string;
     success: boolean;
     distance: number;
-    tilesWalked: number;
-    waypointsUsed: number;
     elapsed: number;
     message: string;
 }
 
 async function testRoute(
-    session: SDKSession,
-    route: typeof TEST_ROUTES[0]
+    route: typeof TEST_ROUTES[0],
+    botName: string
 ): Promise<RouteResult> {
-    const { sdk, bot } = session;
-
     // Generate save at start position
-    await generateSave(session.botName, {
+    await generateSave(botName, {
         position: route.start,
         skills: { Agility: 99 }, // Fast running
     });
 
-    // Reconnect to load new save
-    await session.cleanup();
-    const newSession = await launchBotWithSDK(session.botName, { skipTutorial: false });
-    Object.assign(session, newSession);
+    // Launch fresh session for this route
+    const session = await launchBotWithSDK(botName, { skipTutorial: false });
+    const { sdk, bot } = session;
 
-    // Wait for state
-    await sdk.waitForCondition(s => s.player?.worldX > 0, 10000);
-    await sleep(500);
+    try {
+        // Wait for state
+        await sdk.waitForCondition(s => s.player?.worldX > 0, 10000);
+        await sleep(500);
 
-    const startState = sdk.getState();
-    const startX = startState?.player?.worldX ?? 0;
-    const startZ = startState?.player?.worldZ ?? 0;
+        const startState = sdk.getState();
+        const startX = startState?.player?.worldX ?? 0;
+        const startZ = startState?.player?.worldZ ?? 0;
 
-    const distance = Math.sqrt(
-        Math.pow(route.dest.x - startX, 2) +
-        Math.pow(route.dest.z - startZ, 2)
-    );
+        const distance = Math.sqrt(
+            Math.pow(route.dest.x - startX, 2) +
+            Math.pow(route.dest.z - startZ, 2)
+        );
 
-    console.log(`\n--- ${route.name} ---`);
-    console.log(`  Start: (${startX}, ${startZ})`);
-    console.log(`  Destination: ${route.dest.name} (${route.dest.x}, ${route.dest.z})`);
-    console.log(`  Distance: ${distance.toFixed(0)} tiles`);
+        console.log(`\n--- ${route.name} ---`);
+        console.log(`  Start: (${startX}, ${startZ})`);
+        console.log(`  Destination: ${route.dest.name} (${route.dest.x}, ${route.dest.z})`);
+        console.log(`  Distance: ${distance.toFixed(0)} tiles`);
 
-    const startTime = Date.now();
+        const startTime = Date.now();
 
-    // Use the new navigateTo method with server-side pathfinding
-    const result = await bot.navigateTo(route.dest.x, route.dest.z, route.tolerance);
+        // Use walkTo() which now has built-in pathfinding
+        const result = await bot.walkTo(route.dest.x, route.dest.z, route.tolerance);
 
-    const elapsed = Date.now() - startTime;
+        const elapsed = Date.now() - startTime;
 
-    const endState = sdk.getState();
-    const endX = endState?.player?.worldX ?? 0;
-    const endZ = endState?.player?.worldZ ?? 0;
+        const endState = sdk.getState();
+        const endX = endState?.player?.worldX ?? 0;
+        const endZ = endState?.player?.worldZ ?? 0;
 
-    const finalDist = Math.sqrt(
-        Math.pow(route.dest.x - endX, 2) +
-        Math.pow(route.dest.z - endZ, 2)
-    );
+        const finalDist = Math.sqrt(
+            Math.pow(route.dest.x - endX, 2) +
+            Math.pow(route.dest.z - endZ, 2)
+        );
 
-    console.log(`  Result: ${result.success ? 'SUCCESS' : 'FAILED'}`);
-    console.log(`  End position: (${endX}, ${endZ})`);
-    console.log(`  Distance to target: ${finalDist.toFixed(0)} tiles`);
-    console.log(`  Waypoints used: ${result.waypointsUsed ?? 'N/A'}`);
-    console.log(`  Tiles walked: ${result.tilesWalked ?? 'N/A'}`);
-    console.log(`  Time: ${(elapsed / 1000).toFixed(1)}s`);
-    console.log(`  Message: ${result.message}`);
+        console.log(`  Result: ${result.success ? 'SUCCESS' : 'FAILED'}`);
+        console.log(`  End position: (${endX}, ${endZ})`);
+        console.log(`  Distance to target: ${finalDist.toFixed(0)} tiles`);
+        console.log(`  Time: ${(elapsed / 1000).toFixed(1)}s`);
+        console.log(`  Message: ${result.message}`);
 
-    return {
-        name: route.name,
-        success: finalDist <= route.tolerance,
-        distance,
-        tilesWalked: result.tilesWalked ?? 0,
-        waypointsUsed: result.waypointsUsed ?? 0,
-        elapsed,
-        message: result.message,
-    };
+        return {
+            name: route.name,
+            success: finalDist <= route.tolerance,
+            distance,
+            elapsed,
+            message: result.message,
+        };
+    } finally {
+        await session.cleanup();
+    }
 }
 
 async function testPathfindingAPI(session: SDKSession): Promise<boolean> {
@@ -196,16 +191,16 @@ async function runAllTests(): Promise<boolean> {
             return false;
         }
 
-        // Run just the first route test for now (full test suite would be slow)
-        // In CI, you might want to test all routes
-        const routeToTest = TEST_ROUTES[0]; // Lumbridge to Draynor
-        const result = await testRoute(session, routeToTest);
-        results.push(result);
-
     } finally {
         if (session) {
             await session.cleanup();
         }
+    }
+
+    // Run all route tests (separate session per route)
+    for (const route of TEST_ROUTES) {
+        const result = await testRoute(route, BOT_NAME);
+        results.push(result);
     }
 
     // Print summary
@@ -214,7 +209,7 @@ async function runAllTests(): Promise<boolean> {
 
     for (const r of results) {
         const status = r.success ? 'PASSED' : 'FAILED';
-        console.log(`${r.name}: ${status} (${r.tilesWalked} tiles in ${(r.elapsed / 1000).toFixed(1)}s)`);
+        console.log(`${r.name}: ${status} (${(r.elapsed / 1000).toFixed(1)}s)`);
     }
 
     const allPassed = apiTestPassed && results.every(r => r.success);

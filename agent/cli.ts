@@ -3,6 +3,7 @@
 // Usage: bun cli.ts <command> [options]
 
 import puppeteer, { Browser, Page } from 'puppeteer';
+import { BotSDK } from './sdk';
 
 const CONTROLLER_URL = process.env.CONTROLLER_URL || 'http://localhost:7780';
 const BOT_URL = process.env.BOT_URL || 'http://localhost:8888/bot';
@@ -153,6 +154,52 @@ async function waitForBotConnection(botName: string, maxWaitMs: number = 60000):
     return false;
 }
 
+// Skip tutorial using SDK. Returns true if tutorial was skipped or not needed.
+async function skipTutorial(botName: string, maxAttempts: number = 30): Promise<boolean> {
+    const sdk = new BotSDK({ botUsername: botName });
+    try {
+        await sdk.connect();
+
+        // Wait for game state
+        await sdk.waitForCondition(s => s.inGame, 30000);
+
+        // Accept character design if modal is open
+        const state = sdk.getState();
+        if (state?.modalOpen && state.modalInterface === 269) {
+            await sdk.sendAcceptCharacterDesign();
+            await Bun.sleep(500);
+        }
+
+        // Check if we're in tutorial (x < 3200)
+        const isInTutorial = () => {
+            const s = sdk.getState();
+            return !s?.player || s.player.worldX < 3200;
+        };
+
+        // If not in tutorial, nothing to do
+        if (!isInTutorial()) {
+            await sdk.disconnect();
+            return true;
+        }
+
+        console.log(`${colors.dim}Skipping tutorial...${colors.reset}`);
+
+        let attempts = 0;
+        while (isInTutorial() && attempts < maxAttempts) {
+            await sdk.sendSkipTutorial();
+            await Bun.sleep(1000);
+            attempts++;
+        }
+
+        const success = !isInTutorial();
+        await sdk.disconnect();
+        return success;
+    } catch (e) {
+        try { await sdk.disconnect(); } catch {}
+        return false;
+    }
+}
+
 async function streamLogs(botUsername: string, onComplete?: () => void): Promise<void> {
     let lastLogCount = 0;
     let wasRunning = true;
@@ -214,15 +261,19 @@ ${colors.bold}Usage:${colors.reset}
   bun cli.ts <command> [options]
 
 ${colors.bold}Commands:${colors.reset}
-  launch <bot> "<goal>"  Launch browser, start agent, stream logs
-  start <bot> "<goal>"   Start agent for bot (bot must already be connected)
-  stop <bot>             Stop running agent
-  status [bot]           Get status (all bots if no bot specified)
-  logs <bot>             Stream logs for bot
-  run <bot> "<goal>"     Start agent and stream logs (bot must already be connected)
+  launch <bot> "<goal>" [options]  Launch browser, start agent, stream logs
+  start <bot> "<goal>"             Start agent for bot (bot must already be connected)
+  stop <bot>                       Stop running agent
+  status [bot]                     Get status (all bots if no bot specified)
+  logs <bot>                       Stream logs for bot
+  run <bot> "<goal>"               Start agent and stream logs (bot must already be connected)
+
+${colors.bold}Launch options:${colors.reset}
+  --no-skip-tutorial     Don't skip tutorial (tutorial is skipped by default)
 
 ${colors.bold}Examples:${colors.reset}
   bun cli.ts launch mybot "Get 100 coins"
+  bun cli.ts launch mybot "Get 100 coins" --no-skip-tutorial
   bun cli.ts start shopper1 "Walk to the bank"
   bun cli.ts status
   bun cli.ts logs shopper1
@@ -242,6 +293,7 @@ ${colors.bold}Environment:${colors.reset}
         case 'launch': {
             const bot = args[1];
             const goal = args[2];
+            const shouldSkipTutorial = !args.includes('--no-skip-tutorial');
             if (!bot || !goal) {
                 console.log(`${colors.red}Usage: launch <bot> "<goal>"${colors.reset}`);
                 process.exit(1);
@@ -279,6 +331,14 @@ ${colors.bold}Environment:${colors.reset}
 
                 // Wait a moment for everything to settle
                 await Bun.sleep(2000);
+
+                // Skip tutorial if enabled (on by default)
+                if (shouldSkipTutorial) {
+                    const skipped = await skipTutorial(bot);
+                    if (!skipped) {
+                        console.log(`${colors.yellow}Warning: Failed to skip tutorial${colors.reset}`);
+                    }
+                }
 
                 // Start agent
                 console.log(`${colors.cyan}Starting agent...${colors.reset}`);
