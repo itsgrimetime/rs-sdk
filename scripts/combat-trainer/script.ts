@@ -107,20 +107,29 @@ const STYLE_ROTATION = [
     { style: COMBAT_STYLES.DEFENSIVE, name: 'Block (Defence)' },
 ];
 
-// Track style cycling
-let lastStyleChange = Date.now();
+// Track style cycling - initialized in resetStyleCycling()
+let lastStyleChange = 0;
 let currentStyleIndex = 0;
 const STYLE_CYCLE_MS = 20_000;  // Change every 20 seconds (full rotation = 140s)
+
+// Track which style we last SET (not what the game reports)
+let lastSetStyle = -1;
+
+/**
+ * Reset style cycling state - call at start of training
+ */
+function resetStyleCycling(): void {
+    lastStyleChange = Date.now();
+    currentStyleIndex = 0;
+    lastSetStyle = -1;
+}
 
 /**
  * Cycle combat style for 2:3:2 Attack:Strength:Defence ratio.
  * Time-based cycling since kill counting is unreliable.
+ * IMPORTANT: Always set the style, don't rely on game state reporting correctly.
  */
 async function cycleCombatStyle(ctx: ScriptContext): Promise<void> {
-    const state = ctx.state();
-    const combatStyle = state?.combatStyle;
-    if (!combatStyle) return;
-
     // Check if it's time to switch styles
     const now = Date.now();
     if (now - lastStyleChange >= STYLE_CYCLE_MS) {
@@ -130,9 +139,11 @@ async function cycleCombatStyle(ctx: ScriptContext): Promise<void> {
 
     const target = STYLE_ROTATION[currentStyleIndex]!;
 
-    if (combatStyle.currentStyle !== target.style) {
-        ctx.log(`Switching to ${target.name} style`);
+    // Always set style if it differs from what we last set (don't trust game state)
+    if (lastSetStyle !== target.style) {
+        ctx.log(`Setting ${target.name} style (slot ${currentStyleIndex}/7)`);
         await ctx.sdk.sendSetCombatStyle(target.style);
+        lastSetStyle = target.style;
         ctx.progress();
     }
 }
@@ -445,6 +456,9 @@ async function combatTrainingLoop(ctx: ScriptContext): Promise<void> {
     ctx.log(`Goal: Collect ${HIDES_NEEDED} cow hides → Sell → Buy Iron Scimitar → Train`);
     ctx.log(`Starting XP - Atk: ${stats.startXp.atk}, Str: ${stats.startXp.str}, Def: ${stats.startXp.def}, HP: ${stats.startXp.hp}`);
 
+    // Initialize style cycling timer now (not at module load)
+    resetStyleCycling();
+
     // Equip starting gear
     const sword = ctx.sdk.findInventoryItem(/bronze sword/i);
     if (sword) {
@@ -526,12 +540,12 @@ async function combatTrainingLoop(ctx: ScriptContext): Promise<void> {
 
         // Pick up loot - prioritize cowhides!
         const loot = ctx.sdk.getGroundItems()
-            .filter(i => /cowhide|bones|coins/i.test(i.name))
+            .filter(i => /cow\s?hide|cowhide|bones|coins/i.test(i.name))
             .filter(i => i.distance <= 5)
             .sort((a, b) => {
                 // Priority: hides > coins > bones
                 const priority = (name: string) => {
-                    if (/cowhide/i.test(name)) return 0;
+                    if (/cow\s?hide|cowhide/i.test(name)) return 0;
                     if (/coins/i.test(name)) return 1;
                     return 2;
                 };
@@ -543,9 +557,9 @@ async function combatTrainingLoop(ctx: ScriptContext): Promise<void> {
             const result = await ctx.bot.pickupItem(item);
             if (result.success) {
                 stats.looted++;
-                if (/cowhide/i.test(item.name)) {
+                if (/cow\s?hide|cowhide/i.test(item.name)) {
                     stats.hidesCollected += item.count ?? 1;
-                    const totalHides = (ctx.sdk.findInventoryItem(/^cowhide$/i)?.count ?? 0);
+                    const totalHides = (ctx.sdk.findInventoryItem(/cow\s?hide|cowhide/i)?.count ?? 0);
                     ctx.log(`Picked up cowhide (${totalHides}/${HIDES_NEEDED})`);
                 } else if (/coins/i.test(item.name)) {
                     stats.coinsCollected += item.count ?? 1;

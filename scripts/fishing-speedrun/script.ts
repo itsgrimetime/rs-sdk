@@ -231,8 +231,7 @@ async function chopTreeForLogs(ctx: ScriptContext, stats: Stats): Promise<boolea
 }
 
 /**
- * Light a fire using tinderbox and logs
- * Uses the high-level bot.burnLogs for reliability
+ * Light a fire using tinderbox and logs - simple direct approach
  */
 async function lightFire(ctx: ScriptContext, stats: Stats): Promise<boolean> {
     const tinderbox = findTinderbox(ctx);
@@ -256,46 +255,38 @@ async function lightFire(ctx: ScriptContext, stats: Stats): Promise<boolean> {
     ctx.log('Lighting fire...');
     markProgress(ctx, stats);
 
-    // Use the BotActions.burnLogs for reliable fire lighting
-    const result = await ctx.bot.burnLogs(logs);
+    const fmXpBefore = ctx.state()?.skills.find(s => s.name === 'Firemaking')?.experience ?? 0;
 
-    if (result.success) {
-        stats.firesLit++;
-        ctx.log(`Fire lit! XP gained: ${result.xpGained} (${stats.firesLit} total fires)`);
+    // Use tinderbox on logs directly
+    await ctx.sdk.sendUseItemOnItem(tinderbox.slot, logs.slot);
+
+    // Wait for fire to be lit (check for XP gain or fire nearby)
+    for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 500));
         markProgress(ctx, stats);
-        return true;
-    } else {
-        ctx.warn(`Fire failed: ${result.message}`);
 
-        // If fire failed, try walking a bit and retrying
-        const playerPos = ctx.state()?.player;
-        if (playerPos) {
-            ctx.log('Walking to new spot and retrying...');
-            // Walk a few tiles in a random direction
-            const dx = Math.random() > 0.5 ? 2 : -2;
-            const dz = Math.random() > 0.5 ? 2 : -2;
-            await ctx.bot.walkTo(playerPos.worldX + dx, playerPos.worldZ + dz, 1);
-            markProgress(ctx, stats);
+        // Dismiss any dialogs
+        if (ctx.state()?.dialog.isOpen) {
+            await ctx.sdk.sendClickDialog(0);
+        }
 
-            // Chop another tree if needed
-            if (!findLogs(ctx)) {
-                await chopTreeForLogs(ctx, stats);
-            }
+        // Check for XP gain
+        const fmXp = ctx.state()?.skills.find(s => s.name === 'Firemaking')?.experience ?? 0;
+        if (fmXp > fmXpBefore) {
+            stats.firesLit++;
+            ctx.log(`Fire lit! XP gained: ${fmXp - fmXpBefore} (${stats.firesLit} total fires)`);
+            return true;
+        }
 
-            // Try again with logs
-            const logs2 = findLogs(ctx);
-            if (logs2) {
-                const result2 = await ctx.bot.burnLogs(logs2);
-                if (result2.success) {
-                    stats.firesLit++;
-                    ctx.log(`Fire lit on retry! (${stats.firesLit} total fires)`);
-                    markProgress(ctx, stats);
-                    return true;
-                }
-            }
+        // Check if fire appeared nearby
+        if (findFire(ctx)) {
+            stats.firesLit++;
+            ctx.log(`Fire lit! (${stats.firesLit} total fires)`);
+            return true;
         }
     }
 
+    ctx.warn('Timeout waiting for fire');
     return false;
 }
 
@@ -471,8 +462,23 @@ async function fishUntilFull(ctx: ScriptContext, stats: Stats): Promise<void> {
                     );
                     if (dist > 5) {
                         ctx.log(`Walking back to fishing area (dist: ${dist.toFixed(0)})...`);
-                        await ctx.bot.walkTo(DRAYNOR_FISHING.x, DRAYNOR_FISHING.z);
+                        // Use simple walk with timeout to avoid stalls
+                        await ctx.sdk.sendWalk(DRAYNOR_FISHING.x, DRAYNOR_FISHING.z);
                         markProgress(ctx, stats);
+                        // Wait a bit for movement
+                        for (let i = 0; i < 20; i++) {
+                            await new Promise(r => setTimeout(r, 500));
+                            markProgress(ctx, stats);
+                            // Check if we arrived
+                            const p = ctx.state()?.player;
+                            if (p) {
+                                const d = Math.sqrt(
+                                    Math.pow(p.worldX - DRAYNOR_FISHING.x, 2) +
+                                    Math.pow(p.worldZ - DRAYNOR_FISHING.z, 2)
+                                );
+                                if (d < 10) break;
+                            }
+                        }
                     }
                 }
                 consecutiveNoSpotCount = 0;

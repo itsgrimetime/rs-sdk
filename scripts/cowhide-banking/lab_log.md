@@ -98,6 +98,37 @@
 
 ---
 
+## Run 004-007 - 2026-01-25 06:47-07:06
+
+**Outcome**: Multiple runs with varying results
+
+### Key Findings
+
+1. **Banking loop bug fixed**: Added verification that deposits actually worked before counting
+2. **Stair location was wrong**: (3206, 3228) was the graveyard, not castle interior
+3. **Castle coordinates updated**: Added castle entrance (3210, 3217), stairs (3206, 3208)
+4. **Bank interface never opened**: Script aborted banking correctly after fix
+5. **Connection instability**: SDK shows reconnect attempts, suggests server-side issues
+
+### Run 005 Details (best run)
+- 7 kills, 8 hides collected
+- Multiple successful banking trips attempted (but failed due to wrong coordinates)
+- Emergency banking logic triggered correctly
+- Script properly aborted when bank didn't open
+
+### Remaining Issues
+1. Need to verify stair climbing works with new coordinates
+2. Connection stability is external/server issue
+3. Kill counter undercounts (5 kills tracked but more cows killed)
+
+### Fixes Applied
+- Added deposit verification (check hides left inventory)
+- Abort banking if interface doesn't open (prevents infinite loop)
+- Better logging for stair/loc detection
+- Updated castle coordinates
+
+---
+
 ## Notes
 
 ### Cow Field Location

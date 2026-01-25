@@ -394,35 +394,33 @@ function logStats(ctx: ScriptContext, stats: HideStats): void {
 }
 
 /**
- * Check if we need to bank
+ * Check if we should clear inventory (drop hides to make space)
  */
-function shouldBank(ctx: ScriptContext, stats: HideStats): boolean {
+function shouldDropHides(ctx: ScriptContext): boolean {
     const state = ctx.state();
     if (!state) return false;
 
-    // Count hides in inventory
-    const hidesInInv = state.inventory.filter(i => /cow\s*hide/i.test(i.name)).length;
+    // Drop hides if inventory is getting full
+    return state.inventory.length >= INVENTORY_THRESHOLD;
+}
 
-    // Don't bank if we have no hides
-    if (hidesInInv === 0) return false;
+/**
+ * Drop cow hides to make inventory space
+ */
+async function dropHides(ctx: ScriptContext, stats: HideStats): Promise<void> {
+    ctx.log('=== Dropping hides to make space ===');
 
-    // Bank if inventory is nearly full or we have enough hides
-    if (state.inventory.length >= INVENTORY_THRESHOLD || hidesInInv >= MAX_HIDES_BEFORE_BANK) {
-        return true;
+    const hides = ctx.state()?.inventory.filter(i => /cow\s*hide/i.test(i.name)) ?? [];
+
+    for (const hide of hides) {
+        ctx.log(`Dropping ${hide.name}...`);
+        await ctx.sdk.sendDropItem(hide.slot);
+        stats.hidesCollected++;  // Count as collected even though dropped
+        await new Promise(r => setTimeout(r, 150));
     }
 
-    // Bank early if HP is critical and we have no food (survival banking)
-    const hp = state.skills.find(s => s.name === 'Hitpoints');
-    const hasFood = state.inventory.some(i =>
-        /^(bread|shrimps?|cooked meat|anchovies|trout|salmon|lobster|swordfish|kebab)$/i.test(i.name)
-    );
-
-    if (hp && !hasFood && hp.level <= hp.baseLevel * 0.3 && hidesInInv >= 3) {
-        ctx.log(`Emergency bank: HP critical (${hp.level}/${hp.baseLevel}), no food, ${hidesInInv} hides`);
-        return true;
-    }
-
-    return false;
+    ctx.log(`Dropped ${hides.length} hides. Continuing training...`);
+    ctx.progress();
 }
 
 /**
@@ -458,6 +456,11 @@ async function cowhideLoop(ctx: ScriptContext): Promise<void> {
         await ctx.bot.equipItem(shield);
         ctx.progress();
     }
+
+    // Set combat style to Aggressive for Strength XP
+    ctx.log('Setting combat style to Aggressive (Strength training)...');
+    await ctx.sdk.sendSetCombatStyle(1);  // 0=accurate, 1=aggressive, 2=defensive, 3=controlled
+    ctx.progress();
 
     // Walk to cow field
     ctx.log('Walking to cow field...');
@@ -503,9 +506,9 @@ async function cowhideLoop(ctx: ScriptContext): Promise<void> {
             logStats(ctx, stats);
         }
 
-        // Check if we need to bank
-        if (shouldBank(ctx, stats)) {
-            await bankHides(ctx, stats);
+        // Check if we need to drop hides to make space (simplified - no banking for now)
+        if (shouldDropHides(ctx)) {
+            await dropHides(ctx, stats);
             continue;
         }
 

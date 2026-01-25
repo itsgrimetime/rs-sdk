@@ -23,6 +23,61 @@ Goal: Maximize GP earned from fletching unstrung bows and selling them (now 10 m
 
 ---
 
+## Run 014 - 2026-01-25 07:15 (died to giant spider again)
+
+**Outcome**: died, lost all items
+**GP Earned**: 93 GP earned, then lost on death
+
+### What Happened
+1. Knife pickup worked, cycle 1 completed (93 GP)
+2. Switched to oak trees near general store
+3. **Giant spider attacked while chopping oaks**
+4. HP: 9→7→6→3→1→DEAD
+5. Respawned at Lumbridge, lost knife + axe + 93 GP
+
+### Death Timeline (from events.jsonl)
+```
+tick 13791: HP=9, Giant spider dist=0 (attacking!)
+tick 14527: HP=7
+tick 15213: HP=6
+tick 15966: HP=3
+tick 16654: HP=1
+tick 18122: HP=10, respawned - inventory wiped
+```
+
+### Problem
+The oak trees near Lumbridge general store (3203, 3243) are in a dangerous area with Giant spiders (level 2). They're aggressive and will attack low-level players.
+
+### Potential Solutions
+1. **Kill threatening spiders** - fight back when attacked
+2. Add food and eat when HP low
+3. Use different oak tree location (e.g., near Lumbridge church)
+4. Run away when attacked
+
+---
+
+## Run 013 - 2026-01-25 06:56 (legit start - knife from ground)
+
+**Outcome**: timeout (93 GP in 1 cycle)
+**Duration**: 10m 0s
+**GP Earned**: 93 GP
+
+### Configuration
+- Start: Level 1 Fletching, bronze axe only
+- **Pick up knife from ground** (SE of Lumbridge at 3224, 3202)
+- No cheats!
+
+### Results
+- Found and picked up knife successfully
+- Cycle 1: 6 normal logs → 4 longbow + 1 shortbow + 15 shafts = **93 GP**
+- Leveled 1→21 Fletching
+- Died to spider in oak phase (see Run 014)
+
+### Key Finding
+**Legit start works!** Knife pickup from ground is viable.
+
+---
+
 ## Run 012 - 2026-01-25 06:10 (oak progression success!)
 
 **Outcome**: timeout (successful - 243 GP!)
