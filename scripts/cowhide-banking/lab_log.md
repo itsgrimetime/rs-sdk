@@ -129,6 +129,43 @@
 
 ---
 
+## Run 010 - 2026-01-25 07:28 (BEST RUN!)
+
+**Outcome**: Tick freeze → disconnect after ~10 minutes
+**Duration**: ~10 minutes
+
+### Final Stats
+- **22 kills**
+- **Strength level 46** (from 1!)
+- **Hitpoints level 36** (from 10!)
+- **Combat level 24**
+- **9 hides dropped** multiple times to make space
+
+### What Happened
+- Script ran successfully for ~10 minutes
+- Dropped hides when inventory full (simplified banking)
+- Strength training working (aggressive combat style)
+- Eventually tick froze (36988 repeated twice)
+- Then "Bot not connected"
+
+### Fixes That Helped
+1. **Page crash handlers** - Added `page.on('crash')` and error handlers to browser.ts
+2. **Simplified to dropping** - Removed banking attempts, just drop hides
+3. **Combat style set** - `sendSetCombatStyle(1)` for strength XP
+
+### Observations
+- Tick freeze pattern still occurs but after MUCH longer runtime
+- Console showed one 404 error but script continued fine
+- Dialogs being dismissed during combat properly
+
+### Pattern Analysis
+The disconnects seem correlated with:
+1. Game tick freezing (same tick repeated in consecutive state snapshots)
+2. This happens eventually regardless of script actions
+3. Might be a server-side or game client memory issue
+
+---
+
 ## Notes
 
 ### Cow Field Location

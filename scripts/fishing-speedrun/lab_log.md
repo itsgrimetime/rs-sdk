@@ -2,105 +2,165 @@
 
 Goal: Maximize combined Fishing+Cooking level in 10 minutes.
 
-## Current Strategy (v2 - Fish + Cook)
+## Current Status
 
-**Preset**: FISHER_COOK_AT_DRAYNOR
+**Best Result**: Combined Level 112 (Fishing 56 + Cooking 56) in 10 min
+
+## Known Issues
+
+1. **Fire lighting unreliable**: `sendUseItemOnItem` consumes logs but fire not detected
+2. **Connection drops**: Browser disconnects intermittently
+3. **Draynor dangerous**: Dark wizards kill player - use Al-Kharid instead
+
+## Current Strategy (v3 - Al-Kharid)
+
+**Preset**: FISHER_COOK_AT_DRAYNOR (now at Al-Kharid position)
 - Small fishing net
 - Tinderbox
-- 5 logs
+- 15 logs
+- Position: Al-Kharid (3267, 3148) - SAFE
 
 **Cycle**:
-1. Fish until ~20 raw fish (or inventory nearly full)
+1. Fish until 18 raw fish
 2. Light fire with tinderbox + logs
-3. Use raw fish on fire to cook
+3. Cook all fish on fire
 4. Drop cooked/burned fish
-5. Repeat
-
-**Key Mechanics**:
-- Shrimp: 10 XP fishing, 30 XP cooking
-- Anchovies: 40 XP fishing, 34 XP cooking
-- Fire lasts ~1-2 minutes
-- Can cook all fish on one fire if fast enough
+5. Repeat (or just fish after logs run out)
 
 ---
 
 ## Run History
 
-### Run 003 - Initial Fish+Cook Test (Pending)
+### Run 007 - Banking Fixed!
 
 **Date**: 2026-01-25
-**Outcome**: TBD
+**Duration**: ~280s (connection dropped mid-run)
+
+**Results** (best stable cycle):
+- Fishing: Level 49 (95,000 XP)
+- Cooking: Level 47 (81,000 XP)
+- **COMBINED: 96** (single full cycle with banking)
+- Fish Caught: 46
+- Fish Cooked: 27
+- **Fish Banked: 24** ✓
+
+**Fix Applied**:
+- Bank booth "Use" option doesn't work
+- **"Use-quickly" (option 2) DOES open the bank interface!**
+- Deposits now work correctly
+
+**Remaining Issue**:
+- Server connection drops intermittently
+- When disconnected, player respawns at Lumbridge (~117 tiles away)
+- Pathfinding fails with "Not connected" error
+- Script unable to recover from Lumbridge spawn
 
 ---
 
-### Previous Runs (Fishing Only)
-
-## Run 002 - Final Working Version (Draynor)
+### Run 006 - v4 Range + Drop (before banking fix)
 
 **Date**: 2026-01-25
-**Outcome**: success (reached time limit / stuckness detection)
-**Duration**: 221s (~3.7 minutes)
+**Duration**: 600s (full 10 min)
 
-### Results
-- **Starting Level**: 1
-- **Final Level**: 53
-- **XP Gained**: 144,000
-- **XP/Hour**: ~2.3M
-- **Fish Caught**: 57
-- **Fish Dropped**: 60
+**Results**:
+- Fishing: Level 56 (198,000 XP)
+- Cooking: Level 56 (198,000 XP)
+- **COMBINED: 112**
+- Cycles: 3 complete fish→cook→drop cycles
+- Fish Caught: 78
+- Fish Cooked: 54
 
-### What Worked
-1. Draynor Village fishing spots work at level 1
-2. Continuous clicking without waiting for fish completes
-3. Level-up dialogs properly dismissed
-4. Inventory dropping triggered correctly
-5. Mix of shrimp (10 XP) and anchovies (40 XP at level 15+)
+**Strategy**:
+- Fish at Al-Kharid until 27 raw fish
+- Walk to range, cook all at once
+- Bank interface didn't open (14 booths found but "Use" option failed)
+- Fallback: Drop cooked fish
+- Return to fishing spot
+
+**Notes**:
+- Cooking works perfectly - 27 fish cooked per batch
+- Drop fallback ensures continuous progress when banking fails
+- 3 cycles per 10 min with current walking distances
 
 ---
 
-## Run 001 - Initial Attempts (Catherby Issues)
+### Run 005 - Previous Best (Draynor with cooking)
 
 **Date**: 2026-01-25
-**Outcome**: Multiple failures before finding right approach
+**Duration**: 520s (~8.7 min) - connection lost early
 
-### Issues Encountered
-1. **Catherby "Net, Harpoon" spots require level 35+** - spawned near wrong fishing spots
-2. **PlayerState has no `animation` field** - caused false condition exits
-3. **Dialog blocking** - level-up dialogs blocked fishing
-4. **Waiting too long** - complex wait conditions slowed down the loop
+**Results**:
+- Fishing: Level 60 (282,000 XP)
+- Cooking: Level 39 (36,000 XP)
+- **COMBINED: 99**
+- Fires Lit: 1
+- Fish Cooked: ~12
 
-### Key Discoveries
-1. **Fishing spots are NPCs, not locations** - use `nearbyNpcs` not `nearbyLocs`
-2. **Two types of Net fishing**:
-   - "Net, Bait" spots = small net (shrimp/anchovies) - **no level req**
-   - "Net, Harpoon" spots = big net (mackerel/cod/bass) - **level 16+ req**
-3. **Simple is better** - just click and let the game handle fishing
-4. **State synchronization** - don't rely on animation detection
+### Run 004 - Fishing Only (Draynor)
+
+**Date**: 2026-01-25
+**Duration**: 600s (full 10 min)
+
+**Results**:
+- Fishing: Level 64 (414,000 XP)
+- Cooking: Level 1
+- **COMBINED: 65**
+
+### Run 002 - Initial Fishing Success
+
+**Date**: 2026-01-25
+**Duration**: 221s
+
+**Results**:
+- Fishing: Level 53
+- XP/Hour: ~2.3M
 
 ---
 
-## Notes
+## Technical Notes
 
-### Draynor Fishing Spots (Recommended)
-- Location: ~3087, 3230
-- Options: Net (shrimp/anchovies), Bait (sardine/herring)
-- No level requirement for Net fishing
-- Safe area, no enemies nearby
+### XP Rates (100x Server)
+- Shrimp: 1,000 XP fishing, 3,000 XP cooking
+- Anchovies: 4,000 XP fishing, 3,400 XP cooking
 
-### XP Rates
-- Shrimp: 10 XP fishing, 30 XP cooking
-- Anchovies: 40 XP fishing, 34 XP cooking
-- At high levels, mostly anchovies = faster XP
+### Safe Locations
+- **Al-Kharid (3267, 3148)**: Safe shrimp fishing
+- Draynor (3086, 3230): DANGEROUS - dark wizards!
 
-### Cooking Notes
-- Raw fish detected by "Raw " prefix in item name
-- Fire is a location (NearbyLoc) named "Fire"
-- Use fish on fire via `sendUseItemOnLoc`
-- May get cooking interface - click first option to cook all
-- Burned fish: "Burnt " prefix
+### Environment
+- `NODE_RANDOM_EVENTS=false`: Disable random events
 
-### Best Practices
-1. Use "Net, Bait" spots for level 1 fishing
-2. Don't wait for fishing completion - continuous clicking works
-3. Dismiss level-up dialogs promptly
-4. Cook fish instead of dropping for extra XP
+## Next Steps
+
+1. ~~Fix fire lighting detection (XP check timing)~~ - Switching to permanent range
+2. ~~Consider using cooking range instead of fires~~ - **Implemented in v4**
+3. Handle connection drops with retries
+
+---
+
+## Strategy v4 - Range & Bank (Current)
+
+**Change**: No more portable fires. Use permanent cooking range + bank cycle.
+
+**Locations**:
+- Fishing spot: (3267, 3148)
+- Range: (3273, 3180)
+- Bank: (3269, 3167)
+
+**Cycle**:
+1. Fish until inventory full (28 slots)
+2. Walk north to Al-Kharid range
+3. Cook all fish on range
+4. Walk to Al-Kharid bank
+5. Deposit all cooked fish
+6. Walk back to fishing spot
+7. Repeat
+
+**Advantages**:
+- Permanent range never disappears (unlike fires)
+- No logs/tinderbox needed (more inventory space)
+- Banking allows unlimited cooking without dropping
+
+**Disadvantages**:
+- More walking time per cycle
+- Distance: ~32 tiles fishing→range, ~13 tiles range→bank, ~19 tiles bank→fishing

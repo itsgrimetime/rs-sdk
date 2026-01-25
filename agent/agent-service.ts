@@ -203,11 +203,32 @@ function computeStateDelta(prev: BotWorldState, curr: BotWorldState): StateDelta
             distance: Math.round(item.distance)
         }));
 
-    // Track NPCs that disappeared (likely killed)
+    // Track NPCs that were killed (not just disappeared)
+    // Only count as killed if:
+    // 1. NPC disappeared from nearby list
+    // 2. NPC was in combat (inCombat=true) AND had 0 HP
+    // OR we dealt damage to it recently (check combatEvents)
     const currNpcIndices = new Set(curr.nearbyNpcs.map(n => n.index));
+
+    // Get NPCs we recently dealt damage to from combat events
+    const recentDamageTargets = new Set<number>();
+    for (const event of curr.combatEvents) {
+        if (event.type === 'damage_dealt' && event.targetType === 'npc') {
+            recentDamageTargets.add(event.targetIndex);
+        }
+    }
+
     for (const prevNpc of prev.nearbyNpcs) {
         if (prevNpc.distance <= 10 && !currNpcIndices.has(prevNpc.index)) {
-            delta.npcKills.push(prevNpc.name);
+            // NPC disappeared - check if it was actually killed
+            const wasInCombatWithZeroHp = prevNpc.inCombat && prevNpc.hp === 0 && prevNpc.healthPercent !== null;
+            const hadLowHealth = prevNpc.healthPercent !== null && prevNpc.healthPercent <= 5;
+            const weDealtDamage = recentDamageTargets.has(prevNpc.index);
+
+            // Only count as kill if strong evidence of death
+            if (wasInCombatWithZeroHp || (hadLowHealth && weDealtDamage)) {
+                delta.npcKills.push(prevNpc.name);
+            }
         }
     }
 

@@ -16,6 +16,7 @@ export interface RunEvent {
     args?: unknown[];     // arguments for action events
     result?: unknown;     // result for action events
     durationMs?: number;  // duration for action events
+    delta?: string;       // state delta summary for action events
 }
 
 export interface RunMetadata {
@@ -199,7 +200,7 @@ export class RunRecorder {
     /**
      * Log a BotActions method call
      */
-    logAction(method: string, args: unknown[], result: unknown, durationMs: number): void {
+    logAction(method: string, args: unknown[], result: unknown, durationMs: number, delta?: string): void {
         this.logEvent({
             timestamp: Date.now(),
             type: 'action',
@@ -207,7 +208,8 @@ export class RunRecorder {
             method,
             args,
             result,
-            durationMs
+            durationMs,
+            delta
         });
     }
 

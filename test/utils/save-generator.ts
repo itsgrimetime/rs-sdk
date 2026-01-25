@@ -554,14 +554,12 @@ export const TestPresets = {
         ],
     } as SaveConfig,
 
-    // Fisher+Cook at Draynor with net, tinderbox, and axe for infinite fires
+    // Fisher+Cook at Al-Kharid (SAFE!) - cook at range, bank fish
     FISHER_COOK_AT_DRAYNOR: {
-        position: Locations.DRAYNOR_FISHING,
-        skills: { Fishing: 1, Cooking: 1, Woodcutting: 1 },
+        position: Locations.ALKHARID_FISHING,  // Safe from dark wizards
+        skills: { Fishing: 1, Cooking: 1 },
         inventory: [
             { id: Items.SMALL_FISHING_NET, count: 1 },
-            { id: Items.TINDERBOX, count: 1 },
-            { id: Items.BRONZE_AXE, count: 1 },  // Chop trees for infinite logs
         ],
     } as SaveConfig,
 

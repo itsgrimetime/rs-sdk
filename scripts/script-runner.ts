@@ -93,6 +93,13 @@ export class TimeoutError extends Error {
     }
 }
 
+export class DisconnectError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'DisconnectError';
+    }
+}
+
 // ============================================================================
 // Instrumented BotActions
 // ============================================================================
@@ -257,6 +264,67 @@ class ProgressTracker {
 }
 
 // ============================================================================
+// Connection Health Monitor
+// ============================================================================
+
+/**
+ * Monitors SDK connection and game state health.
+ * Detects:
+ * - SDK disconnections
+ * - Game tick freezes (no state updates)
+ */
+class ConnectionHealthMonitor {
+    private lastStateUpdateTime = Date.now();
+    private lastTick = 0;
+    private tickFreezeThresholdMs: number;
+    private checkInterval: ReturnType<typeof setInterval> | null = null;
+    private onTickFreeze: (() => void) | null = null;
+
+    constructor(tickFreezeThresholdMs: number = 10000) {
+        this.tickFreezeThresholdMs = tickFreezeThresholdMs;
+    }
+
+    /**
+     * Call this whenever a state update is received
+     */
+    onStateUpdate(tick: number): void {
+        if (tick !== this.lastTick) {
+            this.lastTick = tick;
+            this.lastStateUpdateTime = Date.now();
+        }
+    }
+
+    /**
+     * Start monitoring for tick freezes
+     */
+    startChecking(onTickFreeze: () => void): void {
+        this.onTickFreeze = onTickFreeze;
+        this.checkInterval = setInterval(() => {
+            const timeSinceUpdate = Date.now() - this.lastStateUpdateTime;
+            if (timeSinceUpdate > this.tickFreezeThresholdMs) {
+                console.warn(`[Health] Game tick frozen for ${Math.round(timeSinceUpdate / 1000)}s (last tick: ${this.lastTick})`);
+                this.onTickFreeze?.();
+            }
+        }, 2000); // Check every 2 seconds
+    }
+
+    stop(): void {
+        if (this.checkInterval) {
+            clearInterval(this.checkInterval);
+            this.checkInterval = null;
+        }
+    }
+
+    getTimeSinceStateUpdate(): number {
+        return Date.now() - this.lastStateUpdateTime;
+    }
+
+    getLastTick(): number {
+        return this.lastTick;
+    }
+}
+
+// ============================================================================
 // Script Runner
 // ============================================================================
 
@@ -315,10 +383,15 @@ export function runScript(config: ScriptConfig, scriptFn: ScriptFn): void {
         let recorder: RunRecorder | null = null;
         let consoleCapture: ConsoleCapture | null = null;
         let progressTracker: ProgressTracker | null = null;
+        let healthMonitor: ConnectionHealthMonitor | null = null;
         let stateInterval: ReturnType<typeof setInterval> | null = null;
         let timeLimitTimeout: ReturnType<typeof setTimeout> | null = null;
+        let unsubscribeConnection: (() => void) | null = null;
+        let unsubscribeState: (() => void) | null = null;
         let stallDetected = false;
         let timeLimitReached = false;
+        let disconnectDetected = false;
+        let tickFreezeDetected = false;
 
         try {
             // Create recorder for this script's runs
@@ -352,6 +425,30 @@ export function runScript(config: ScriptConfig, scriptFn: ScriptFn): void {
             progressTracker = new ProgressTracker(stallTimeout);
             progressTracker.startChecking(() => {
                 stallDetected = true;
+            });
+
+            // Setup connection health monitor
+            healthMonitor = new ConnectionHealthMonitor(15000); // 15s tick freeze threshold
+            healthMonitor.startChecking(() => {
+                tickFreezeDetected = true;
+            });
+
+            // Subscribe to SDK connection state changes
+            unsubscribeConnection = sdk.onConnectionStateChange((state, attempt) => {
+                console.log(`[SDK] Connection state: ${state}${attempt ? ` (attempt ${attempt})` : ''}`);
+                if (state === 'disconnected') {
+                    disconnectDetected = true;
+                } else if (state === 'reconnecting') {
+                    console.log(`[SDK] Attempting reconnection...`);
+                } else if (state === 'connected') {
+                    console.log(`[SDK] Connection restored`);
+                    disconnectDetected = false; // Reset if we reconnected
+                }
+            });
+
+            // Subscribe to state updates for health monitoring
+            unsubscribeState = sdk.onStateUpdate((state) => {
+                healthMonitor?.onStateUpdate(state.tick);
             });
 
             // Setup state snapshots
@@ -413,6 +510,12 @@ export function runScript(config: ScriptConfig, scriptFn: ScriptFn): void {
                 }
 
                 // Check conditions
+                if (disconnectDetected) {
+                    throw new DisconnectError(`SDK disconnected (last tick: ${healthMonitor?.getLastTick() || 'unknown'})`);
+                }
+                if (tickFreezeDetected) {
+                    throw new DisconnectError(`Game tick frozen for ${Math.round((healthMonitor?.getTimeSinceStateUpdate() || 0) / 1000)}s (last tick: ${healthMonitor?.getLastTick() || 'unknown'})`);
+                }
                 if (stallDetected) {
                     throw new StallError(`No progress for ${stallTimeout / 1000}s`);
                 }
@@ -433,7 +536,16 @@ export function runScript(config: ScriptConfig, scriptFn: ScriptFn): void {
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : String(err);
 
-            if (err instanceof StallError) {
+            if (err instanceof DisconnectError) {
+                console.error(`\nDISCONNECT: ${errorMessage}`);
+                recorder?.logEvent({
+                    timestamp: Date.now(),
+                    type: 'error',
+                    content: `Disconnect: ${errorMessage}`
+                });
+                recorder?.setOutcome('error', `Disconnect: ${errorMessage}`);
+                return 'error';
+            } else if (err instanceof StallError) {
                 console.error(`\nSTALL DETECTED: ${errorMessage}`);
                 recorder?.setOutcome('stall', errorMessage);
                 return 'stall';
@@ -457,6 +569,9 @@ export function runScript(config: ScriptConfig, scriptFn: ScriptFn): void {
             if (stateInterval) clearInterval(stateInterval);
             if (timeLimitTimeout) clearTimeout(timeLimitTimeout);
             progressTracker?.stop();
+            healthMonitor?.stop();
+            unsubscribeConnection?.();
+            unsubscribeState?.();
             consoleCapture?.restore();
             recorder?.stopRun();
 

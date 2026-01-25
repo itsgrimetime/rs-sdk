@@ -376,6 +376,84 @@ The puppeteer connection keeps closing unexpectedly:
 
 ---
 
+## Run 006 - 2026-01-25 (30-minute runs with improvements)
+
+**Goal**: Extended 30-minute runs with improved reliability and metrics.
+
+### Improvements Made
+
+1. **Fixed cowhide counting** - Now properly counts all unstacked items in inventory:
+   ```typescript
+   function countCowhides(ctx): number {
+       return ctx.sdk.getInventory()
+           .filter(i => /^cow\s?hide$/i.test(i.name))
+           .reduce((sum, i) => sum + (i.count ?? 1), 0);
+   }
+   ```
+
+2. **Extended time limit**: 10 min → 30 min
+3. **Increased stall timeout**: 90s → 120s
+
+4. **Inventory management** - Drops bones when inventory gets full:
+   - Prioritizes hides over bones
+   - Drops up to 5 bones when ≤2 free slots
+
+5. **Improved pickup reliability**:
+   - Reduced pickup distance: 5 tiles → 3 tiles (avoids long-distance timeouts)
+   - Added failed pickup tracking - won't retry same item for 30 seconds
+   - Skip bones entirely during training phase
+
+6. **Better stats logging**:
+   - XP/hour calculation
+   - Time-based logging every 5 minutes (in addition to kill-based)
+
+### Test Results
+
+**Run 006a**: 5 minutes before disconnect (tick freeze - server issue)
+
+| Metric | Value |
+|--------|-------|
+| Kills | 16 |
+| Hides collected | 10/50 |
+| XP gained | 45,110 |
+| XP/hour | ~740,000 |
+| Combat style rotation | Working |
+
+**Run 006b**: 5 minutes before disconnect (tick freeze - server issue)
+
+| Metric | Value |
+|--------|-------|
+| Kills | 15 |
+| Hides collected | 9/50 |
+| XP gained | 48,820 |
+| XP/hour | ~800,966 |
+| Bone dropping | Working! |
+
+**Observations**:
+- Cowhide counting now works correctly! Shows "1/50", "2/50", etc.
+- Pickup efficiency improved (fewer repeated timeout attempts)
+- **Bone dropping triggered**: "Dropping 1 bones to make room for hides..."
+- XP rate extrapolates to ~50 hides in ~25-30 minutes
+- Server tick freezes consistently at ~5 minutes (infrastructure issue)
+
+### Issues Encountered
+
+1. **Server disconnects** - Game tick freezes causing disconnections
+   - Not a script issue, infrastructure/server problem
+   - "Game tick frozen for 17s (last tick: 21405)"
+
+2. **Some attack timeouts** still occurring
+   - "Timeout waiting to attack Cow"
+   - May be pathfinding or NPC selection issue
+
+### Next Steps
+
+- [ ] Investigate server tick freeze issues
+- [ ] Potentially reduce attack timeout for faster fallback
+- [ ] Test full 30-minute run when server is stable
+
+---
+
 ## Run 005 - 2026-01-25 (Al Kharid Journey!)
 
 **Goal**: Train at Lumbridge until Combat Level 15, then travel to Al Kharid for better training.

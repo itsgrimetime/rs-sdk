@@ -38,6 +38,52 @@ const GATE_TOLL = 10;
 const COINS_NEEDED = IRON_SCIMITAR_PRICE + GATE_TOLL + 10;  // 132gp buffer
 const HIDES_NEEDED = 50;  // ~2-3gp each = 100-150gp
 
+/**
+ * Count total cowhides in inventory (they don't stack, so count items)
+ */
+function countCowhides(ctx: ScriptContext): number {
+    const inventory = ctx.sdk.getInventory();
+    return inventory.filter(i => /^cow\s?hide$/i.test(i.name)).reduce((sum, i) => sum + (i.count ?? 1), 0);
+}
+
+/**
+ * Count total coins in inventory
+ */
+function countCoins(ctx: ScriptContext): number {
+    const coins = ctx.sdk.findInventoryItem(/^coins$/i);
+    return coins?.count ?? 0;
+}
+
+/**
+ * Get free inventory slots
+ */
+function getFreeSlots(ctx: ScriptContext): number {
+    const inventory = ctx.sdk.getInventory();
+    return 28 - inventory.length;
+}
+
+/**
+ * Drop bones to make room for hides (bones are worth less than hides)
+ */
+async function dropBonesIfNeeded(ctx: ScriptContext): Promise<void> {
+    const freeSlots = getFreeSlots(ctx);
+
+    // If inventory has 2 or fewer free slots, drop bones to make room
+    if (freeSlots <= 2) {
+        const inventory = ctx.sdk.getInventory();
+        const bones = inventory.filter(i => /^bones$/i.test(i.name));
+
+        if (bones.length > 0) {
+            ctx.log(`Dropping ${bones.length} bones to make room for hides...`);
+            for (const bone of bones.slice(0, 5)) {  // Drop up to 5 bones at a time
+                await ctx.sdk.sendDropItem(bone.slot);
+                await new Promise(r => setTimeout(r, 300));
+                ctx.progress();
+            }
+        }
+    }
+}
+
 // Track combat statistics
 interface CombatStats {
     kills: number;
@@ -51,6 +97,8 @@ interface CombatStats {
     weaponUpgraded: boolean;
     phase: 'farming' | 'selling' | 'buying' | 'training';  // Cow-based phases
     lastStatsLog: number;
+    startTime: number;           // For timing
+    lastTimeBasedLog: number;    // Last time-based log timestamp
 }
 
 /**
@@ -64,6 +112,8 @@ function findBestTarget(ctx: ScriptContext): NearbyNpc | null {
     const targets = state.nearbyNpcs
         .filter(npc => /^cow$/i.test(npc.name))  // Only cows (not "cow calf")
         .filter(npc => npc.options.some(o => /attack/i.test(o)))
+        // Filter out NPCs we know are busy (recently returned "already in combat")
+        .filter(npc => canAttackNpc(npc.index))
         // Filter out NPCs already fighting someone else
         .filter(npc => {
             if (npc.targetIndex === -1) return true;
@@ -114,6 +164,54 @@ const STYLE_CYCLE_MS = 20_000;  // Change every 20 seconds (full rotation = 140s
 
 // Track which style we last SET (not what the game reports)
 let lastSetStyle = -1;
+
+// Track failed pickups to avoid retrying (key: "x,z,id", value: timestamp)
+const failedPickups = new Map<string, number>();
+const FAILED_PICKUP_COOLDOWN = 30_000;  // Don't retry failed pickups for 30 seconds
+
+function canAttemptPickup(item: { x: number; z: number; id: number }): boolean {
+    const key = `${item.x},${item.z},${item.id}`;
+    const lastFailed = failedPickups.get(key);
+    if (lastFailed && Date.now() - lastFailed < FAILED_PICKUP_COOLDOWN) {
+        return false;  // Still on cooldown
+    }
+    return true;
+}
+
+function markPickupFailed(item: { x: number; z: number; id: number }): void {
+    const key = `${item.x},${item.z},${item.id}`;
+    failedPickups.set(key, Date.now());
+    // Clean up old entries
+    const now = Date.now();
+    for (const [k, v] of failedPickups.entries()) {
+        if (now - v > FAILED_PICKUP_COOLDOWN * 2) {
+            failedPickups.delete(k);
+        }
+    }
+}
+
+// Track NPCs that are "already in combat" to avoid attacking them repeatedly
+const busyNpcs = new Map<number, number>();  // NPC index -> timestamp
+const BUSY_NPC_COOLDOWN = 15_000;  // Don't retry NPCs that were busy for 15 seconds
+
+function canAttackNpc(npcIndex: number): boolean {
+    const lastBusy = busyNpcs.get(npcIndex);
+    if (lastBusy && Date.now() - lastBusy < BUSY_NPC_COOLDOWN) {
+        return false;
+    }
+    return true;
+}
+
+function markNpcBusy(npcIndex: number): void {
+    busyNpcs.set(npcIndex, Date.now());
+    // Clean up old entries
+    const now = Date.now();
+    for (const [k, v] of busyNpcs.entries()) {
+        if (now - v > BUSY_NPC_COOLDOWN * 2) {
+            busyNpcs.delete(k);
+        }
+    }
+}
 
 /**
  * Reset style cycling state - call at start of training
@@ -263,14 +361,14 @@ async function sellHides(ctx: ScriptContext, stats: CombatStats): Promise<boolea
     ctx.log('=== Selling Cow Hides ===');
     stats.phase = 'selling';
 
-    const hides = ctx.sdk.findInventoryItem(/^cowhide$/i);
-    if (!hides || hides.count === 0) {
+    const hideCount = countCowhides(ctx);
+    if (hideCount === 0) {
         ctx.warn('No cow hides to sell!');
         stats.phase = 'farming';
         return false;
     }
 
-    ctx.log(`Walking to Lumbridge general store with ${hides.count} hides...`);
+    ctx.log(`Walking to Lumbridge general store with ${hideCount} hides...`);
     await ctx.bot.walkTo(LOCATIONS.LUMBRIDGE_GENERAL_STORE.x, LOCATIONS.LUMBRIDGE_GENERAL_STORE.z);
     ctx.progress();
 
@@ -281,16 +379,23 @@ async function sellHides(ctx: ScriptContext, stats: CombatStats): Promise<boolea
         return false;
     }
 
-    // Sell all hides
-    const sellResult = await ctx.bot.sellToShop(/^cowhide$/i, hides.count);
-    if (!sellResult.success) {
-        ctx.warn(`Failed to sell hides: ${sellResult.message}`);
-        await ctx.bot.closeShop();
-        stats.phase = 'farming';
-        return false;
+    // Sell all hides (one at a time since they don't stack)
+    const inventory = ctx.sdk.getInventory();
+    const allHides = inventory.filter(i => /^cow\s?hide$/i.test(i.name));
+    let soldCount = 0;
+
+    for (const hide of allHides) {
+        const sellResult = await ctx.bot.sellToShop(/^cow\s?hide$/i, 1);
+        if (sellResult.success) {
+            soldCount++;
+        } else {
+            ctx.warn(`Failed to sell hide: ${sellResult.message}`);
+            break;
+        }
+        ctx.progress();
     }
 
-    ctx.log(`Sold ${hides.count} cow hides!`);
+    ctx.log(`Sold ${soldCount} cow hides!`);
     await ctx.bot.closeShop();
     ctx.progress();
 
@@ -433,6 +538,7 @@ async function combatTrainingLoop(ctx: ScriptContext): Promise<void> {
     if (!state) throw new Error('No initial state');
 
     // Initialize stats tracking
+    const now = Date.now();
     const stats: CombatStats = {
         kills: 0,
         damageDealt: 0,
@@ -450,6 +556,8 @@ async function combatTrainingLoop(ctx: ScriptContext): Promise<void> {
         weaponUpgraded: false,
         phase: 'farming',  // Start farming cow hides
         lastStatsLog: 0,
+        startTime: now,
+        lastTimeBasedLog: now,
     };
 
     ctx.log('=== Combat Trainer - Cow Hide Strategy ===');
@@ -494,20 +602,23 @@ async function combatTrainingLoop(ctx: ScriptContext): Promise<void> {
             continue;
         }
 
-        // Log periodic stats
-        if (stats.kills > 0 && stats.kills % 5 === 0 && stats.kills !== stats.lastStatsLog) {
+        // Log periodic stats (every 10 kills or every 5 minutes)
+        const timeSinceLastLog = Date.now() - stats.lastTimeBasedLog;
+        const shouldLogByKills = stats.kills > 0 && stats.kills % 10 === 0 && stats.kills !== stats.lastStatsLog;
+        const shouldLogByTime = timeSinceLastLog >= 5 * 60_000;  // 5 minutes
+
+        if (shouldLogByKills || shouldLogByTime) {
             stats.lastStatsLog = stats.kills;
+            stats.lastTimeBasedLog = Date.now();
             logStats(ctx, stats);
         }
 
         // Cycle combat style for balanced training (time-based)
         await cycleCombatStyle(ctx);
 
-        // Check current resources
-        const hides = ctx.sdk.findInventoryItem(/^cowhide$/i);
-        const coins = ctx.sdk.findInventoryItem(/^coins$/i);
-        const hideCount = hides?.count ?? 0;
-        const coinCount = coins?.count ?? 0;
+        // Check current resources using proper counting
+        const hideCount = countCowhides(ctx);
+        const coinCount = countCoins(ctx);
 
         // Phase logic: farming → selling → buying → training
         if (stats.phase === 'farming' && !stats.weaponUpgraded) {
@@ -524,24 +635,34 @@ async function combatTrainingLoop(ctx: ScriptContext): Promise<void> {
                 await buyIronScimitar(ctx, stats);
                 continue;
             }
+
+            // Drop bones if inventory is getting full (prioritize hides over bones)
+            await dropBonesIfNeeded(ctx);
         }
 
         if (stats.phase === 'selling') {
             // After selling, try to buy
-            const newCoins = ctx.sdk.findInventoryItem(/^coins$/i);
-            if ((newCoins?.count ?? 0) >= COINS_NEEDED) {
+            const newCoinCount = countCoins(ctx);
+            if (newCoinCount >= COINS_NEEDED) {
                 await buyIronScimitar(ctx, stats);
             } else {
-                ctx.log(`Only ${newCoins?.count ?? 0} coins, need ${COINS_NEEDED}. Collecting more hides...`);
+                ctx.log(`Only ${newCoinCount} coins, need ${COINS_NEEDED}. Collecting more hides...`);
                 stats.phase = 'farming';
             }
             continue;
         }
 
         // Pick up loot - prioritize cowhides!
-        const loot = ctx.sdk.getGroundItems()
+        // Skip bones if: inventory tight, or in training phase (don't need money anymore)
+        const skipBones = getFreeSlots(ctx) <= 4 || stats.phase === 'training';
+        // In training phase, only pick up hides if we're still working toward iron scimitar
+        const shouldLoot = stats.phase === 'farming' || !stats.weaponUpgraded;
+
+        const loot = shouldLoot ? ctx.sdk.getGroundItems()
             .filter(i => /cow\s?hide|cowhide|bones|coins/i.test(i.name))
-            .filter(i => i.distance <= 5)
+            .filter(i => !skipBones || !/^bones$/i.test(i.name))  // Skip bones if inventory tight
+            .filter(i => i.distance <= 3)  // Reduced from 5 to avoid timeouts
+            .filter(i => canAttemptPickup(i))  // Skip items we recently failed to pick up
             .sort((a, b) => {
                 // Priority: hides > coins > bones
                 const priority = (name: string) => {
@@ -550,7 +671,7 @@ async function combatTrainingLoop(ctx: ScriptContext): Promise<void> {
                     return 2;
                 };
                 return priority(a.name) - priority(b.name) || a.distance - b.distance;
-            });
+            }) : [];
 
         if (loot.length > 0) {
             const item = loot[0]!;
@@ -559,11 +680,14 @@ async function combatTrainingLoop(ctx: ScriptContext): Promise<void> {
                 stats.looted++;
                 if (/cow\s?hide|cowhide/i.test(item.name)) {
                     stats.hidesCollected += item.count ?? 1;
-                    const totalHides = (ctx.sdk.findInventoryItem(/cow\s?hide|cowhide/i)?.count ?? 0);
+                    const totalHides = countCowhides(ctx);
                     ctx.log(`Picked up cowhide (${totalHides}/${HIDES_NEEDED})`);
                 } else if (/coins/i.test(item.name)) {
                     stats.coinsCollected += item.count ?? 1;
                 }
+            } else {
+                // Mark this item as failed so we don't retry immediately
+                markPickupFailed(item);
             }
             ctx.progress();
         }
@@ -589,6 +713,10 @@ async function combatTrainingLoop(ctx: ScriptContext): Promise<void> {
         const attackResult = await ctx.bot.attackNpc(target);
         if (!attackResult.success) {
             ctx.warn(`Attack failed: ${attackResult.message}`);
+            // Mark NPC as busy if already in combat (won't retry for 15s)
+            if (attackResult.reason === 'already_in_combat') {
+                markNpcBusy(target.index);
+            }
             // Try opening gate if blocked
             if (attackResult.reason === 'out_of_reach') {
                 await ctx.bot.openDoor(/gate/i);
@@ -628,10 +756,16 @@ function logStats(ctx: ScriptContext, stats: CombatStats): void {
     };
 
     const totalXp = xpGained.atk + xpGained.str + xpGained.def + xpGained.hp;
-    const hides = ctx.sdk.findInventoryItem(/^cowhide$/i)?.count ?? 0;
+    const hides = countCowhides(ctx);
 
-    ctx.log(`--- Stats after ${stats.kills} kills (Phase: ${stats.phase}) ---`);
+    // Calculate XP/hour
+    const elapsedMs = Date.now() - stats.startTime;
+    const elapsedMinutes = Math.round(elapsedMs / 60_000);
+    const xpPerHour = elapsedMs > 60_000 ? Math.round(totalXp / (elapsedMs / 3_600_000)) : 0;
+
+    ctx.log(`--- Stats after ${elapsedMinutes}m / ${stats.kills} kills (Phase: ${stats.phase}) ---`);
     ctx.log(`XP: Atk +${xpGained.atk}, Str +${xpGained.str}, Def +${xpGained.def}, HP +${xpGained.hp} (Total: +${totalXp})`);
+    ctx.log(`XP/hour: ~${xpPerHour.toLocaleString()}`);
     ctx.log(`Hides: ${hides}/${HIDES_NEEDED}, Coins: ${stats.coinsCollected}`);
     ctx.log(`Weapon: ${stats.weaponUpgraded ? 'IRON SCIMITAR!' : 'Bronze Sword'}`);
 }
@@ -641,8 +775,8 @@ runScript({
     name: 'combat-trainer',
     goal: 'Kill cows for hides, sell for coins, buy iron scimitar, train combat',
     preset: TestPresets.LUMBRIDGE_SPAWN,
-    timeLimit: 10 * 60 * 1000,  // 10 minutes
-    stallTimeout: 90_000,       // 90 seconds (for shop/gate interactions)
+    timeLimit: 30 * 60 * 1000,  // 30 minutes
+    stallTimeout: 120_000,      // 120 seconds (for shop/gate interactions)
 }, async (ctx) => {
     try {
         await combatTrainingLoop(ctx);

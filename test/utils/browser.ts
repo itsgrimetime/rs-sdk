@@ -210,6 +210,30 @@ export async function launchBotBrowser(
     await page.setViewport({ width: 800, height: 600 });  // Minimal viewport
     page.setDefaultTimeout(60000);  // 60s timeout for all operations
 
+    // Add crash/error handlers to detect page issues
+    page.on('crash', () => {
+        console.error(`[Browser] Page CRASHED for bot '${name}'!`);
+    });
+
+    page.on('pageerror', (error) => {
+        console.error(`[Browser] Page JS error for bot '${name}':`, (error as Error).message);
+    });
+
+    page.on('error', (error) => {
+        console.error(`[Browser] Page error for bot '${name}':`, error.message);
+    });
+
+    page.on('close', () => {
+        console.log(`[Browser] Page closed for bot '${name}'`);
+    });
+
+    // Log console messages from the game page
+    page.on('console', (msg) => {
+        if (msg.type() === 'error') {
+            console.error(`[Browser Console] ${name}:`, msg.text());
+        }
+    });
+
     // Navigate to bot URL with all params - page handles auto-login, fps, etc.
     // tst=1 indicates running via test (hides agent panel by default)
     await page.goto(`${BOT_URL}?bot=${name}&password=test&fps=15&tst=1`, { waitUntil: 'networkidle2', timeout: 60000 });
