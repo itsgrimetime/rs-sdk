@@ -6,28 +6,11 @@ A persistent character progression approach to automation experiments.
 
 Unlike the `scripts/` methodology which resets character state between runs, **Bot Arcs** maintain a single persistent character across many script executions. The goal is long-term progression: maximize **Total Level + GP + Equipment Value**.
 
-## Core Differences from Scripts
+The strategy is to break down high level goals into a todo list (tracked in the character's `lab_log.md`), then implement each item as a short-running arc script (1-30 minutes). After each run, record the character's full state (levels, equipment, inventory, bank contents) and todos. Use this snapshot to inform the next iteration.
 
-| Aspect | Scripts | Bot Arcs |
-|--------|---------|----------|
-| Character State | Reset each run | Persistent across runs |
-| Goal | Task completion | Score maximization |
-| Duration | Fixed (usually 5-10m) | Variable (1m-30m) |
-| Iteration | Change script each run | Re-run same script if working |
-| Success Metric | Binary (pass/fail) | Continuous (score) |
+A key tool is using variable length script timeouts based on confidence in the strategy. Start with short runs (1-5 minutes) to validate new approaches, then extend to longer runs (10-30 minutes) as confidence builds.
 
-## The Score Function
-
-```
-Score = Total Level + GP + Equipment Value
-```
-
-Where:
-- **Total Level** = Sum of all skill levels (starting: 32 at level 1 in all skills)
-- **GP** = Coins in inventory + coins in bank + rough value of items in bank
-- **Equipment Value** = rough value of all worn items (drip factor)
-
-Track this score at the start and end of each arc.
+Another key tool is re-using scripts. If it's not broken, don't rewrite it for no reason. Over time, we will produce a more robust library of scripts that can even import and chain together to form longer runs.
 
 ## Arc Types
 
@@ -51,7 +34,7 @@ bot_arcs/
 │   ├── fishing.md
 │   └── ...
 ├── <character-name>/           # One folder per persistent character
-│   ├── config.ts               # Character settings, current goals
+│   ├── config.ts               # Character settings, goals
 │   ├── lab_log.md              # Progress journal
 │   └── arcs/
 │       └── <arc-name>/
@@ -70,25 +53,7 @@ Each character has a `config.ts`:
 ```typescript
 export const character = {
   username: 'iron_max_01',
-
-  // Current focus
-  currentArc: 'fishing-to-40',
-
-  // Progress tracking
-  lastScore: {
-    totalLevel: 45,
-    gp: 12500,
-    equipmentValue: 3200,
-    total: 45 + 12500 + 3200, // 15,745
-    timestamp: '2026-01-24T12:00:00Z'
-  },
-
-  // Bank state summary (updated manually or via script)
-  bankHighlights: [
-    '500 raw trout',
-    '200 oak logs',
-    'steel axe',
-  ],
+  goal: 'high total level, make wealth, buy better armor to equip'
 };
 ```
 
@@ -104,9 +69,9 @@ Plan Arc → Write Script → Run (1-30m) → Record State → Analyze → Repea
 
 3. **Run** - Execute with persistence (no preset/spawn reset)
 
-4. **Record State** - Log levels, equipment, inventory, bank, and score
+4. **Record State** - Log levels, equipment, inventory, bank
 
-5. **Analyze** - Did score improve? Keep running or try something new?
+5. **Analyze** - Did we make forward progress? Keep running or try something new?
 
 6. **Repeat** - Re-run if working, or write new arc if needed
 
@@ -115,15 +80,6 @@ Plan Arc → Write Script → Run (1-30m) → Record State → Analyze → Repea
 ```markdown
 # Lab Log: iron_max_01
 
-## Character Progress
-
-| Date | Arc | Duration | Score Before | Score After | Delta |
-|------|-----|----------|--------------|-------------|-------|
-| 01-24 | tutorial-completion | 10m | 32 | 156 | +124 |
-| 01-24 | fishing-to-20 | 15m | 156 | 892 | +736 |
-| 01-25 | sell-fish-buy-axe | 5m | 892 | 1,245 | +353 |
-
----
 
 ## Arc: fishing-to-20
 
@@ -131,29 +87,24 @@ Plan Arc → Write Script → Run (1-30m) → Record State → Analyze → Repea
 
 **Duration**: 15m
 **Timeout**: Completed naturally at 12m
-**Score**: 156 → 892 (+736)
+**Progress**: 50gp → 352gp (+302), fishing level 5 → 22 (+17), cooking level 1 → 22 (+17)
 
 ### What Happened
 - Started at fishing level 5
-- Fished shrimp until level 10
-- Switched to trout at Barbarian Village
-- Reached level 22 (overshot goal)
-- Banked 145 raw trout
+- Fished shrimp until level 22
+- Sold cooked shrimp for GP
 
 ### State After Run
-**Levels**: Fishing 22, Cooking 1, ...
+**Levels**: Fishing 22, Cooking 22, ...
 **Total Level**: 49
 
 **Equipment**: None equipped
-**Inventory**: Small fishing net, 23 raw trout
-**Bank**: 145 raw trout, 89 raw shrimp, 50 gp
+**Inventory**: Small fishing net, 352gp
+**Bank**: 89 raw shrimp, 50 gp
 
-**Score**: 49 + 50 + 0 = 99
 
 ### Next Steps
-- Run again to keep leveling fishing
-- Could sell fish for GP boost later
-- Consider cooking for additional XP
+- Run again to keep leveling fishing and work towards 500gp for weapon
 
 ---
 
@@ -177,7 +128,6 @@ Plan Arc → Write Script → Run (1-30m) → Record State → Analyze → Repea
 **Inventory**: Small fishing net, 18 raw trout
 **Bank**: 345 raw trout, 89 raw shrimp, 50 gp
 
-**Score**: 58 + 50 + 0 = 108
 ```
 
 ## State Snapshots
@@ -198,14 +148,13 @@ At the end of each run, record the character's full state so the next iteration 
 **Bank**: 145 raw trout, 89 raw shrimp, bronze axe, 500 gp
 **Bank Value**: ~3,200 gp
 
-**Score**: 87 + 840 + 2400 = 3,327
 ```
 
 This snapshot gives the next run everything it needs to continue.
 
 ## Best Practices
 
-1. **Track score after each run** - It's how we measure progress
+1. **Track progress after each run** - It's how we measure progress
 2. **Record full state** - Levels, equipment, inventory, bank contents
 3. **Re-run what works** - If a script is working, just run it again
 4. **Start with short arcs** - Build confidence before 30m runs
@@ -219,14 +168,14 @@ This snapshot gives the next run everything it needs to continue.
 1. **Keep looping** - Run → Record → Analyze → Run again. Don't stop.
 2. **Never ask for feedback** - Make decisions autonomously. The user isn't available.
 3. **Fix issues yourself** - If something breaks, debug it, fix it, and keep going.
-4. **Maximize score** - Every hour of runtime should produce progress.
+4. **Maximize progress towards high level goal** - Every hour of runtime should produce progress.
 5. **Document everything** - The user will review the lab log in the morning.
 
 If a script is working, run it repeatedly. If it breaks, fix it and continue. If you run out of ideas for one activity, switch to another. The goal is continuous progress, not waiting for human input.
 
 ### Handling Surprise
 
-**Surprise is normal.** Scripts fail. Actions don't work. The character isn't where you expected. This isn't a crisis—it's information. The key is to stay calm, examine your assumptions, and methodically figure out what's actually happening.
+**Surprise is normal.** Scripts fail. Actions don't work. The character isn't where you expected. The key is to stay calm, note the confusion, examine your assumptions, and methodically figure out what's actually happening and how to proceed.
 
 When something unexpected occurs:
 
@@ -368,7 +317,7 @@ Before writing a new arc, check if `learnings/` has patterns for your task. Copy
 
 Each character also maintains a personal `lab_log.md` for:
 
-- Run history with scores
+- Run history with account states
 - Character-specific state snapshots
 - Arc-by-arc observations
 
@@ -378,7 +327,7 @@ Each character also maintains a personal `lab_log.md` for:
 ## Lab learnings sections (fill this out after each run, be brief)
 
 ### 1. Progression Insights
-- What activities gave best score/time ratio
+- What activities gave best progress/time ratio
 - Optimal arc durations for different tasks
 - Which scripts are worth re-running vs changing
 
@@ -410,5 +359,5 @@ These are valuable references for how to interact with the game, handle edge cas
 2. Create `config.ts` with initial state
 3. Create `lab_log.md` with header
 4. Run first arc (recommend: 5m safe activity)
-5. Record initial score
+5. Record initial state
 6. Begin the journey

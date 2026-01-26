@@ -641,13 +641,6 @@ export function runArc(config: ArcConfig, arcFn: ArcFn): void {
             if (finalState && recorder) {
                 recorder.logState(compactState(finalState));
 
-                // Log final score
-                const totalLevel = finalState.skills.reduce((sum, s) => sum + s.baseLevel, 0);
-                const coins = finalState.inventory.find(i => /coins/i.test(i.name))?.count ?? 0;
-                console.log(`\n=== Final State ===`);
-                console.log(`Total Level: ${totalLevel}`);
-                console.log(`GP: ${coins}`);
-                console.log(`Score: ${totalLevel + coins}`);
             }
 
             recorder.setOutcome('success', 'Arc completed successfully');

@@ -55,9 +55,22 @@ const isAttacking = state.player?.animId !== -1;
 
 | Location | Coordinates | Targets | Notes |
 |----------|-------------|---------|-------|
-| Lumbridge cows | (3253, 3255) | Cows | Safe, good for all levels |
+| Lumbridge cows | (3253, 3290) | Cows | Safe, good for all levels. Gate at (3253, 3270) |
 | Lumbridge goblins | (3240, 3220) | Goblins, rats | Mixed enemies |
 | Lumbridge chickens | (3237, 3295) | Chickens | Very safe, feathers drop |
+
+## Cow Field Details (Proven from 200+ kills)
+
+The cow field is fenced with a gate on the south side:
+- **Field center**: ~(3253, 3290)
+- **Gate position**: (3253, 3270)
+- **Inside cow pen**: x between 3242-3265, z between 3255-3298
+
+```typescript
+function isInsideCowPen(x: number, z: number): boolean {
+    return x >= 3242 && x <= 3265 && z >= 3255 && z <= 3298;
+}
+```
 
 ## Opening Gates
 
@@ -90,16 +103,99 @@ async function findTarget(ctx: ScriptContext, pattern: RegExp): Promise<NearbyNp
 }
 ```
 
-## Looting
+## Looting Ground Items
 
-Pick up valuable drops:
+**CRITICAL**: Use `sdk.getGroundItems()` NOT `state.nearbyLocs` for dropped items!
 
 ```typescript
-const loot = state.groundItems
-    .filter(i => /bones|hide|feather|coins/i.test(i.name))
-    .sort((a, b) => a.distance - b.distance)[0];
+// WRONG - nearbyLocs is for static objects (trees, rocks, etc.)
+const loot = state.nearbyLocs.filter(i => /hide/i.test(i.name));  // Won't work!
 
-if (loot && loot.distance < 5) {
-    await ctx.bot.pickupItem(loot);
+// CORRECT - getGroundItems() for drops
+const groundItems = await ctx.sdk.getGroundItems();
+const loot = groundItems.filter(i => /hide|bones|coins/i.test(i.name));
+```
+
+### Limit Pickups Per Loop
+
+Pick up a few items (e.g. 3), then return to combat. Prevents getting stuck in infinite loot loops:
+
+```typescript
+const MAX_PICKUPS = 3;
+const groundItems = await ctx.sdk.getGroundItems();
+const loot = groundItems
+    .filter(i => /hide|bones/i.test(i.name))
+    .filter(i => i.distance < 5)
+    .slice(0, MAX_PICKUPS);
+
+for (const item of loot) {
+    await ctx.bot.pickupItem(item);
+    await new Promise(r => setTimeout(r, 500));
+}
+// Back to combat
+```
+
+## Error Handling for Long Runs (Critical!)
+
+Timeouts and errors are frequent in crowded areas. Wrap attacks in try/catch:
+
+```typescript
+// This pattern enabled consistent 10-minute runs
+try {
+    await ctx.bot.attackNpc(/cow/i);
+} catch (err) {
+    ctx.log(`Attack timed out, trying next cow`);
+    continue;  // Don't crash - just find another target
 }
 ```
+
+### Common Messages and Handling
+
+| Message | Meaning | Response |
+|---------|---------|----------|
+| "I'm already under attack" | Crowded area, NPC in combat | Find different target |
+| "I can't reach that!" | Obstacle or fence | Move closer, check gates |
+| Attack timeout | Target died/moved | Try next NPC |
+
+### State Validation
+
+Browser glitches sometimes return invalid positions. Validate state before acting:
+
+```typescript
+const player = ctx.state()?.player;
+if (!player || player.worldX === 0 || player.worldZ === 0) {
+    ctx.log('Invalid state - waiting for sync');
+    await new Promise(r => setTimeout(r, 2000));
+    continue;
+}
+
+// Also catch impossible position changes (>500 tiles = glitch)
+if (Math.abs(player.worldX - lastX) > 500) {
+    ctx.log('Position glitch detected, skipping action');
+    continue;
+}
+```
+
+## Auto-Train Lowest Combat Stat
+
+For balanced progression, automatically train whichever stat is lowest:
+
+```typescript
+function getLowestCombatStat(state): { stat: string, style: number } {
+    const skills = state.skills;
+    const atk = skills.find(s => s.name === 'Attack')?.baseLevel ?? 1;
+    const str = skills.find(s => s.name === 'Strength')?.baseLevel ?? 1;
+    const def = skills.find(s => s.name === 'Defence')?.baseLevel ?? 1;
+
+    if (def <= atk && def <= str) return { stat: 'Defence', style: 3 };
+    if (str <= atk) return { stat: 'Strength', style: 1 };
+    return { stat: 'Attack', style: 0 };
+}
+
+// Set combat style based on lowest stat
+const { stat, style } = getLowestCombatStat(ctx.state());
+await ctx.sdk.sendSetCombatStyle(style);
+ctx.log(`Training ${stat} (lowest)`);
+```
+
+This pattern enabled balanced 60+ in all melee stats.

@@ -43,6 +43,25 @@ for (const ore of ores) {
 }
 ```
 
+## Deposit All of an Item
+
+Use `-1` as the quantity to deposit all of an item type: (tested for stacked items, not sure about non-stacking items, if you figure out please update!)
+
+```typescript
+// WRONG - deposits only 1 item if count=1
+await ctx.sdk.sendBankDeposit(slot, count);
+
+// CORRECT - deposits ALL items of that type
+await ctx.sdk.sendBankDeposit(slot, -1);
+
+// Verify the deposit worked
+for (let i = 0; i < 10; i++) {
+    await new Promise(r => setTimeout(r, 300));
+    const inv = ctx.state()?.inventory ?? [];
+    if (!inv.some(i => /coins/i.test(i.name))) break;
+}
+```
+
 ## Withdrawing Items
 
 ```typescript
@@ -100,3 +119,10 @@ async function bankTrip(ctx, itemPattern, bankCoords, returnCoords) {
     await walkWaypoints(ctx, WAYPOINTS_TO_RESOURCE);
 }
 ```
+
+
+### Key Learnings from Cowhide Banking
+1. **Gate exit threshold**: Use `z < 3268` not `z < 3265` for cow field
+2. **Always open gate first**: `openDoor(/gate/i)` before walking through
+3. **Use sendWalk for gate traversal**: More reliable than pathfinder
+4. **Banking works at Varrock West**: (3185, 3436) confirmed working
