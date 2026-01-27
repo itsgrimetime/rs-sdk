@@ -75,34 +75,64 @@ if (state.shop.isOpen) { ... }
 if (state.interface?.isOpen) { ... }
 ```
 
-## Toll Gate Pattern
+## sendClickDialog Index Behavior
 
-Al Kharid toll gate requires dialog interaction:
+- `sendClickDialog(0)` = special "continue" action (RESUME_PAUSEBUTTON)
+- `sendClickDialog(1-5)` = click actual option buttons (1-based indices)
+
+Always use `0` as fallback for "Click here to continue" screens.
+
+## Al Kharid Toll Gate Pattern
+
+Requires 10gp. Position west of gate: (3267, 3228).
 
 ```typescript
-// Click gate
 const gate = ctx.state()?.nearbyLocs.find(l => /gate/i.test(l.name));
-const openOpt = gate.optionsWithIndex.find(o => /open/i.test(o.text));
-await ctx.sdk.sendInteractLoc(gate.x, gate.z, gate.id, openOpt.opIndex);
-await new Promise(r => setTimeout(r, 800));
+await ctx.sdk.sendInteractLoc(gate.x, gate.z, gate.id, 1);
+await sleep(1000);
 
-// Handle dialog
-for (let i = 0; i < 20; i++) {
+// Click through dialog: 0 = continue, or pick "Yes" when available
+for (let i = 0; i < 10; i++) {
+    const yesOpt = ctx.state()?.dialog?.options.find(o => /yes/i.test(o.text));
+    await ctx.sdk.sendClickDialog(yesOpt?.index ?? 0);
+    await sleep(300);
+}
+
+await ctx.bot.walkTo(3277, 3227);  // Walk through to Al Kharid
+```
+
+## Buying Kebabs from Karim (Al Kharid)
+
+Karim sells kebabs via dialog (not a shop interface). Location: (3273, 3180)
+
+```typescript
+// Walk to kebab seller
+await ctx.bot.walkTo(3273, 3180);
+
+// Find Karim
+const seller = ctx.state()?.nearbyNpcs.find(n => /kebab/i.test(n.name));
+const talkOpt = seller.optionsWithIndex.find(o => /talk/i.test(o.text));
+await ctx.sdk.sendInteractNpc(seller.index, talkOpt.opIndex);
+await new Promise(r => setTimeout(r, 1000));
+
+// Handle dialog to buy kebab (1gp each)
+for (let i = 0; i < 15; i++) {
     const s = ctx.state();
     if (!s?.dialog.isOpen) {
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise(r => setTimeout(r, 200));
         continue;
     }
-
-    const yesOpt = s.dialog.options.find(o => /yes/i.test(o.text));
-    if (yesOpt) {
-        await ctx.sdk.sendClickDialog(yesOpt.index);
+    const buyOpt = s.dialog.options.find(o => /yes/i.test(o.text));
+    if (buyOpt) {
+        await ctx.sdk.sendClickDialog(buyOpt.index);
         break;
     }
     await ctx.sdk.sendClickDialog(0);
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise(r => setTimeout(r, 300));
 }
 ```
+
+Kebabs cost 1gp and heal 1-19 HP (random). Good cheap food for training.
 
 ## Detecting Stuck in Dialog
 

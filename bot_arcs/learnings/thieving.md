@@ -117,6 +117,59 @@ if (gp >= GP_BANK_THRESHOLD) {
 
 Draynor Bank is closest to Lumbridge thieving spot.
 
+## Al Kharid Thieving (with Kebab Sustain)
+
+Al Kharid is excellent for sustained thieving because kebabs cost only 1gp and can heal the stun damage. Warriors can also be thieved.
+
+### Location
+| Target | Coordinates | Notes |
+|--------|-------------|-------|
+| Men near palace | (3293, 3175) | Multiple men, good density |
+| Karim (kebabs) | (3273, 3180) | 1gp per kebab (dialog shop) |
+
+### Thieving + Kebab Loop
+
+```typescript
+const MIN_KEBABS = 3;
+const EAT_HP_THRESHOLD = 7;
+
+// Check if we need food
+const hp = getHP(ctx);
+const kebabCount = getKebabCount(ctx);
+
+if (hp.current <= EAT_HP_THRESHOLD) {
+    // Eat food if available
+    const food = ctx.state()?.inventory.find(i => /kebab/i.test(i.name));
+    if (food) {
+        const eatOpt = food.optionsWithIndex.find(o => /eat/i.test(o.text));
+        await ctx.sdk.sendUseItem(food.slot, eatOpt.opIndex);
+    }
+}
+
+// Restock kebabs if low
+if (kebabCount < MIN_KEBABS && getCoins(ctx) >= 3) {
+    await ctx.bot.walkTo(3273, 3180);  // Karim
+    // ... buy kebab dialog (see dialogs.md)
+}
+
+// Walk to men if not nearby
+const distToMen = /* calculate distance to (3293, 3175) */;
+if (distToMen > 15) {
+    await ctx.bot.walkTo(3293, 3175);
+}
+
+// Pickpocket
+const man = ctx.state()?.nearbyNpcs.find(n => /^man$/i.test(n.name));
+// ... standard pickpocket pattern
+```
+
+### Results from calk Character
+
+- Thieving 1 → 54 in ~15 minutes total
+- ~3gp per successful pickpocket
+- ~70% success rate at higher levels
+- Kebab sustain works well (bought 14, ate ~28 including starting food)
+
 ## Why Thieving for Money?
 
 Thieving requires no tools or equipment - making it ideal for:

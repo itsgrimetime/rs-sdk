@@ -1945,48 +1945,31 @@ export class BotActions {
 
     /**
      * Navigates through a dialog by selecting options in sequence.
-     * Options can be indices (1-based) or text patterns to match.
+     * - Number 0: click to continue (RESUME_PAUSEBUTTON)
+     * - Number 1-5: click specific option button
+     * - String/RegExp: match option text (case-insensitive for strings), fallback to continue
+     *
+     * Clicks are sent every 600ms (one game tick) regardless of dialog state.
+     * Add extra iterations to handle timing - first click may be before dialog opens.
      */
     async navigateDialog(choices: (number | string | RegExp)[]): Promise<void> {
         for (const choice of choices) {
-            // Wait for dialog to be ready
-            await this.sdk.waitForCondition(s =>
-                s.dialog.isOpen && !s.dialog.isWaiting,
-                10000
-            );
-
             const dialog = this.sdk.getDialog();
-            if (!dialog) {
-                throw new Error('Dialog closed unexpectedly');
-            }
-
             let optionIndex: number;
 
             if (typeof choice === 'number') {
                 optionIndex = choice;
             } else {
-                // Find option matching the pattern
+                // Find option matching the pattern, fallback to 0 (continue)
                 const regex = typeof choice === 'string'
                     ? new RegExp(choice, 'i')
                     : choice;
-
-                const match = dialog.options.find(o => regex.test(o.text));
-                if (!match) {
-                    // No options means "click to continue" (option 0)
-                    if (dialog.options.length === 0) {
-                        optionIndex = 0;
-                    } else {
-                        throw new Error(`No dialog option matching: ${choice}`);
-                    }
-                } else {
-                    optionIndex = match.index;
-                }
+                const match = dialog?.options.find(o => regex.test(o.text));
+                optionIndex = match?.index ?? 0;
             }
 
             await this.sdk.sendClickDialog(optionIndex);
-
-            // Small delay for dialog to process
-            await this.sdk.waitForStateChange(5000).catch(() => {});
+            await new Promise(r => setTimeout(r, 600));  // Full game tick
         }
     }
 

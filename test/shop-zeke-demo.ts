@@ -13,8 +13,6 @@ runTest({
         position: { x: 3274, z: 3186 }, // Near Al-Kharid furnace, close to Zeke
         inventory: [
             { id: Items.COINS, count: 10000 },
-            { id: Items.BRONZE_SCIMITAR, count: 1 },
-            { id: Items.IRON_SCIMITAR, count: 1 },
         ],
     },
     launchOptions: { skipTutorial: false },
@@ -84,13 +82,8 @@ runTest({
         console.log(`${item.name}:`);
         console.log(`  - Buy at ${markup}% of base value (${item.buyPrice}gp)`);
         console.log(`  - Sell at ${sellPct}% of base value (${item.sellPrice}gp)`);
-        console.log(`  - Shop profit margin: ${profit}gp per item`);
     }
 
-    // === PLAYER INVENTORY IN SHOP ===
-    console.log('\n─────────────────────────────────────────────');
-    console.log('YOUR INVENTORY (What you can SELL)');
-    console.log('─────────────────────────────────────────────');
 
     if (shop.playerItems.length === 0) {
         console.log('(No sellable items in inventory)');
@@ -106,10 +99,7 @@ runTest({
         }
     }
 
-    // === BOT DECISION MAKING ===
-    console.log('\n─────────────────────────────────────────────');
-    console.log('BOT DECISION INSIGHTS');
-    console.log('─────────────────────────────────────────────');
+
 
     // Find best value item to buy
     const bestBuy = shop.shopItems.reduce((best, item) =>
@@ -122,6 +112,14 @@ runTest({
         item.buyPrice > best.buyPrice ? item : best
     );
     console.log(`Most expensive item: ${mostExpensive.name} (${mostExpensive.buyPrice}gp)`);
+
+    // buy most expensive item
+    const buyResult = await bot.buyFromShop(mostExpensive.name, 1);
+    if (!buyResult.success) {
+        console.log(`Failed to buy ${mostExpensive.name}: ${buyResult.message}`);
+        return false;
+    }
+    console.log(`Bought ${buyResult.item?.name} `);
 
     // Check what player can sell
     const playerCoins = sdk.findInventoryItem(/coins/i);

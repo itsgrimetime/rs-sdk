@@ -76,7 +76,7 @@ if (item) {
 
 ```typescript
 // Find item in shop stock
-const shopItem = ctx.state()?.shop?.items?.find(i => /sword/i.test(i.name));
+const shopItem = ctx.state()?.shop?.shopItems?.find(i => /sword/i.test(i.name));
 if (shopItem && shopItem.count > 0) {
     await ctx.sdk.sendShopBuy(shopItem.slot, 1);
     await new Promise(r => setTimeout(r, 200));

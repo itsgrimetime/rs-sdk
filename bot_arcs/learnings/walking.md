@@ -130,9 +130,29 @@ await ctx.bot.walkTo(3092, 3243);  // May path through (3220, 3220)
 | Draynor fishing | (3087, 3230) |
 | Varrock West bank | (3185, 3436) |
 | SE Varrock mine | (3285, 3365) |
-| Al Kharid gate | (3268, 3228) |
 | Lumbridge general store | (3212, 3247) |
 | Lumbridge castle (thieving) | (3222, 3218) |
 
+### Al Kharid Coordinates
 
+| Location | Coordinates | Notes |
+|----------|-------------|-------|
+| Toll gate (Lumbridge side) | (3268, 3228) | Pay 10gp to enter |
+| Toll gate (Al Kharid side) | (3277, 3227) | Walk here after paying |
+| Al Kharid bank | (3269, 3167) | x=3269 is 1 tile west of typical "in Al Kharid" check |
+| Kebab seller (Karim) | (3273, 3180) | Dialog-based shop, 1gp per kebab |
+| Scimitar shop (Zeke) | (3287, 3186) | Bronze to Mithril scimitars |
+| Warriors/Men (palace) | (3293, 3175) | Good thieving/combat training |
+| Fishing spots | (3267, 3148) | Safe shrimp fishing (there is a lvl 14 scorpion)
+
+### Al Kharid Detection
+
+```typescript
+// Simple check: x >= 3270 means inside Al Kharid
+// BUT note the bank is at x=3269, so use x >= 3267 for safety
+function isInAlKharid(ctx: ScriptContext): boolean {
+    const player = ctx.state()?.player;
+    if (!player) return false;
+    return player.worldX >= 3267 && player.worldZ < 3220;
+}
 ```

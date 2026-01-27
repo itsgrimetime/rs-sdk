@@ -56,6 +56,10 @@ runTest({
     // Try to deposit all bones with -1
     console.log('\n--- Testing depositItem(bones, -1) ---');
     const firstBone = initialBones[0];
+    if (!firstBone) {
+        console.log('FAILED: No bones found in inventory');
+        return false;
+    }
     console.log(`Depositing from slot ${firstBone.slot} with amount=-1...`);
 
     const depositResult = await bot.depositItem(/bones/i, -1);
