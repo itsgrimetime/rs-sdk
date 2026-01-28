@@ -31,4 +31,3 @@ consider typescript MCP again
 
 save file Download/upload flow! (no guarantees for save file durabilitiy  
 
-hiscores
