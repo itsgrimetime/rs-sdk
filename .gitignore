@@ -1,7 +1,7 @@
 node_modules/
 .DS_Store
 runs/
-agent/agent-state/
+gateway/agent-state/
 screenshots/
 public-bot/
 public-client/

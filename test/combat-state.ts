@@ -8,7 +8,7 @@
  */
 
 import { launchBotWithSDK, sleep, type SDKSession } from './utils/browser';
-import type { CombatEvent } from '../agent/types';
+import type { CombatEvent } from '../sdk/types';
 
 async function runCombatStateTest(): Promise<boolean> {
     const BOT_NAME = process.env.BOT_NAME;

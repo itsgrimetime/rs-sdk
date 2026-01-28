@@ -19,7 +19,7 @@ Demo Production server running on Fly.io with game server, web client, and bot S
 |----------|-------------|
 | `wss://rs-sdk-demo.fly.dev/` | Game WebSocket connection |
 | `wss://rs-sdk-demo.fly.dev/bot` | Bot client WebSocket connection |
-| `wss://rs-sdk-demo.fly.dev/agent` | SDK WebSocket connection (proxies to gateway) |
+| `wss://rs-sdk-demo.fly.dev/gateway` | SDK WebSocket connection (proxies to gateway) |
 
 ### APIs
 
@@ -42,7 +42,7 @@ Demo Production server running on Fly.io with game server, web client, and bot S
 import { GameClient } from 'rs-agent-sdk';
 
 const client = new GameClient({
-  gatewayUrl: 'wss://rs-sdk-demo.fly.dev/agent',
+  gatewayUrl: 'wss://rs-sdk-demo.fly.dev/gateway',
   webPort: 443,
   webHost: 'rs-sdk-demo.fly.dev',
   useHttps: true
@@ -57,10 +57,10 @@ Use the `?bot=<username>` query parameter to run multiple bots:
 
 ```typescript
 // Bot 1
-const bot1 = new GameClient({ gatewayUrl: 'wss://rs-sdk-demo.fly.dev/agent?bot=bot1' });
+const bot1 = new GameClient({ gatewayUrl: 'wss://rs-sdk-demo.fly.dev/gateway?bot=bot1' });
 
 // Bot 2
-const bot2 = new GameClient({ gatewayUrl: 'wss://rs-sdk-demo.fly.dev/agent?bot=bot2' });
+const bot2 = new GameClient({ gatewayUrl: 'wss://rs-sdk-demo.fly.dev/gateway?bot=bot2' });
 ```
 
 ## Deployment

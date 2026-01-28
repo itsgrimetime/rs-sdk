@@ -12,7 +12,7 @@
  */
 
 import { launchBotWithSDK, sleep, type SDKSession } from './utils/browser';
-import type { ShopSellResult } from '../agent/bot-actions';
+import type { ShopSellResult } from '../sdk/actions';
 
 const BOT_NAME = process.env.BOT_NAME;
 const BOBS_AXES = { x: 3231, z: 3203 }; // Bob's Brilliant Axes in Lumbridge

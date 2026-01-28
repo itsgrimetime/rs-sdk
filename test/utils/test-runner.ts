@@ -5,8 +5,8 @@
 
 import { launchBotWithSDK, sleep, type SDKSession } from './browser';
 import { generateSave, type SaveConfig, type TestPreset } from './save-generator';
-import type { BotSDK } from '../../agent/sdk';
-import type { BotActions } from '../../agent/bot-actions';
+import type { BotSDK } from '../../sdk';
+import type { BotActions } from '../../sdk/actions';
 
 // ============================================================================
 // Test Runner

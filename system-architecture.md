@@ -160,7 +160,7 @@ import { BotSDK, BotActions } from '../sdk/actions';
 
 const sdk = new BotSDK({
     botUsername: 'mybot',
-    gatewayUrl: 'wss://rs-sdk-demo.fly.dev/agent'
+    gatewayUrl: 'wss://rs-sdk-demo.fly.dev/gateway'
 });
 
 await sdk.connect();
@@ -176,7 +176,7 @@ await bot.burnLogs();
 | Option | Default | Description |
 |--------|---------|-------------|
 | `botUsername` | required | Bot to control |
-| `gatewayUrl` | - | Full gateway URL (e.g., `wss://server/agent`) |
+| `gatewayUrl` | - | Full gateway URL (e.g., `wss://server/gateway`) |
 | `host` | `'localhost'` | Gateway hostname (if not using gatewayUrl) |
 | `port` | `7780` | Gateway port (if not using gatewayUrl) |
 | `actionTimeout` | `30000` | Action timeout in ms |
@@ -205,7 +205,7 @@ await sdk.waitForConnection(60000);
 
 | Component | Path | Purpose |
 |-----------|------|---------|
-| **Gateway** | `agent/gateway.ts` | WebSocket router for bot/SDK communication |
+| **Gateway** | `gateway/gateway.ts` | WebSocket router for bot/SDK communication |
 | **SDK** | `sdk/index.ts` | Low-level protocol mapping (plumbing) |
 | **BotActions** | `sdk/actions.ts` | Domain-aware API (porcelain) |
 | **Types** | `sdk/types.ts` | Shared type definitions |
@@ -324,12 +324,10 @@ sdk/                          # Standalone SDK package - SOURCE OF TRUTH
 ├── types.ts                  # Type definitions
 └── README.md                 # Installation & usage docs
 
-agent/
+gateway/
 ├── gateway.ts                # WebSocket router for bot/SDK communication
-├── sdk.ts                    # Re-exports from sdk/
-├── bot-actions.ts            # Re-exports from sdk/
-├── types.ts                  # Game protocol types
-├── run-recorder.ts           # Logging
+├── types.ts                  # Gateway message protocol types
+├── run-recorder.ts           # Run logging and screenshots
 └── agent-state/              # Per-bot state files
     └── <botname>/
         ├── player.json

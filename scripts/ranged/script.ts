@@ -17,7 +17,7 @@
 
 import { runScript, TestPresets, StallError } from '../script-runner';
 import type { ScriptContext } from '../script-runner';
-import type { NearbyNpc } from '../../agent/types';
+import type { NearbyNpc } from '../../sdk/types';
 
 // Training location - Lumbridge chicken coop (inside)
 const CHICKEN_COOP = { x: 3235, z: 3295 };

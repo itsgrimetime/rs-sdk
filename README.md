@@ -69,17 +69,16 @@ webclient/
 └── 3rdparty/      # Third-party dependencies
 ```
 
-### Agent (`agent/`)
+### Gateway (`gateway/`)
 
-AI agent system using Claude Agent SDK for autonomous bot control.
+WebSocket relay service connecting browser game clients to SDK automation scripts.
 
 ```
-agent/
-├── agent-state/       # Live state files (JSON/MD) for agent consumption
-├── gateway.ts         # Unified WebSocket router (sync + controller)
-├── sdk.ts             # Low-level protocol API (plumbing)
-├── bot-actions.ts     # High-level domain API (porcelain)
-└── login.ts           # Automated login helper
+gateway/
+├── gateway.ts         # WebSocket router for bot ↔ SDK communication
+├── types.ts           # Gateway message protocol types
+├── run-recorder.ts    # Run logging and screenshots
+└── agent-state/       # Live state files per bot
 ```
 
 
@@ -100,7 +99,7 @@ agent/
                                                  │ WebSocket
                                                  ▼
 ┌──────────────────────────────────────────────────────────┐
-│                    Gateway (agent/gateway.ts)            │
+│                    Gateway (gateway/gateway.ts)          │
 │                           :7780                          │
 ├──────────────────────────────────────────────────────────┤
 │  SyncModule              │  ControllerModule             │

@@ -18,7 +18,7 @@
 
 import { runScript, TestPresets } from '../script-runner';
 import type { ScriptContext } from '../script-runner';
-import type { NearbyNpc } from '../../agent/types';
+import type { NearbyNpc } from '../../sdk/types';
 
 // Thieving stats tracking
 interface ThievingStats {

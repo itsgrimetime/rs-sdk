@@ -32,7 +32,7 @@ const CLIENT_URL = IS_LOCAL
     : `https://${SERVER}/bot?bot=${USERNAME}&password=test`;
 const GATEWAY_URL = IS_LOCAL
     ? `ws://${SERVER}:7780`
-    : `wss://${SERVER}/agent`;
+    : `wss://${SERVER}/gateway`;
 
 async function main() {
     // 1. Open browser with game client
@@ -130,7 +130,7 @@ https://rs-sdk-demo.fly.dev/bot?bot=NAME&password=test&fps=15&tst=1
 // Demo server (path-based routing)
 const sdk = new BotSDK({
     botUsername: 'mybot',
-    gatewayUrl: 'wss://rs-sdk-demo.fly.dev/agent'
+    gatewayUrl: 'wss://rs-sdk-demo.fly.dev/gateway'
 });
 
 // Local development (port-based)

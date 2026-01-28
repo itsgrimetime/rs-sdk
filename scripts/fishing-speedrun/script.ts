@@ -11,7 +11,7 @@
  */
 
 import { runScript, type ScriptContext, StallError, TestPresets } from '../script-runner';
-import type { NearbyNpc, NearbyLoc, InventoryItem } from '../../agent/types';
+import type { NearbyNpc, NearbyLoc, InventoryItem } from '../../sdk/types';
 
 // Al-Kharid locations
 const LOCATIONS = {

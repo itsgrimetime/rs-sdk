@@ -256,7 +256,7 @@ export interface ActionResult {
 
 export interface SDKConfig {
     botUsername: string;
-    /** Full WebSocket URL (e.g. wss://server.com/agent). Overrides host/port if set. */
+    /** Full WebSocket URL (e.g. wss://server.com/gateway). Overrides host/port if set. */
     gatewayUrl?: string;
     /** Gateway hostname (default: localhost) */
     host?: string;

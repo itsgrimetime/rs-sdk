@@ -9,8 +9,8 @@
  * - Type-safe state access (no regex parsing!)
  */
 
-import { BotSDK } from '../agent/sdk';
-import { BotActions } from '../agent/bot-actions';
+import { BotSDK } from '../sdk';
+import { BotActions } from '../sdk/actions';
 import { launchBotBrowser, skipTutorial, sleep, type BrowserSession } from './utils/browser';
 
 const BOT_NAME = process.env.BOT_NAME;

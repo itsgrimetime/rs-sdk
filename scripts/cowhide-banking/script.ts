@@ -14,7 +14,7 @@
 
 import { runScript, TestPresets, StallError } from '../script-runner';
 import type { ScriptContext } from '../script-runner';
-import type { NearbyNpc } from '../../agent/types';
+import type { NearbyNpc } from '../../sdk/types';
 
 // Locations
 const LOCATIONS = {

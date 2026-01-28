@@ -26,7 +26,7 @@ import { BotActions } from './rs-sdk/actions';
 // Connect to the public demo server (ephemeral save files!)
 const sdk = new BotSDK({
     botUsername: 'mybot123',
-    gatewayUrl: 'wss://rs-sdk-demo.fly.dev/agent'
+    gatewayUrl: 'wss://rs-sdk-demo.fly.dev/gateway'
 });
 
 await sdk.connect();
@@ -80,7 +80,7 @@ await page.goto('https://rs-sdk-demo.fly.dev/bot?bot=mybot123&password=test');
 | Option | Default | Description |
 |--------|---------|-------------|
 | `botUsername` | required | Bot to control (max 12 chars) |
-| `gatewayUrl` | - | Full WebSocket URL (e.g. `wss://server.com/agent`) |
+| `gatewayUrl` | - | Full WebSocket URL (e.g. `wss://server.com/gateway`) |
 | `host` | `'localhost'` | Gateway hostname (ignored if gatewayUrl set) |
 | `port` | `7780` | Gateway port (ignored if gatewayUrl set) |
 | `actionTimeout` | `30000` | Action timeout in ms |

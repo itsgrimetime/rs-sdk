@@ -6,7 +6,7 @@
  */
 
 import { launchBotWithSDK, sleep, type SDKSession } from './utils/browser';
-import type { NearbyNpc, InventoryItem } from '../agent/types';
+import type { NearbyNpc, InventoryItem } from '../sdk/types';
 
 const HEALTH_THRESHOLD = 10;
 const BLOCKED_NPC_COOLDOWN_TICKS = 10; // How long to avoid an NPC after "someone else is fighting" message

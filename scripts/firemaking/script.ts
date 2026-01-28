@@ -16,7 +16,7 @@
  */
 
 import { runScript, type ScriptContext, StallError, TestPresets } from '../script-runner';
-import type { NearbyLoc, InventoryItem } from '../../agent/types';
+import type { NearbyLoc, InventoryItem } from '../../sdk/types';
 
 // Lumbridge tree locations (near castle)
 const LUMBRIDGE_TREES_AREA = { x: 3200, z: 3230 };

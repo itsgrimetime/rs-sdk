@@ -11,10 +11,10 @@ import { join } from 'path';
 import { mkdirSync, existsSync, writeFileSync } from 'fs';
 import { launchBotWithSDK, sleep, type SDKSession } from '../test/utils/browser';
 import { generateSave, type SaveConfig, TestPresets } from '../test/utils/save-generator';
-import { RunRecorder } from '../agent/run-recorder';
-import { BotSDK } from '../agent/sdk';
-import { BotActions } from '../agent/bot-actions';
-import type { BotWorldState } from '../agent/types';
+import { RunRecorder } from '../gateway/run-recorder';
+import { BotSDK } from '../sdk';
+import { BotActions } from '../sdk/actions';
+import type { BotWorldState } from '../sdk/types';
 
 // ============ State Delta Types ============
 

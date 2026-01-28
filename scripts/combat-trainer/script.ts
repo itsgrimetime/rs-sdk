@@ -13,7 +13,7 @@
 
 import { runScript, TestPresets } from '../script-runner';
 import type { ScriptContext } from '../script-runner';
-import type { NearbyNpc } from '../../agent/types';
+import type { NearbyNpc } from '../../sdk/types';
 
 // Combat style indices for swords (4 styles: Stab, Lunge, Slash, Block)
 // See: https://oldschool.runescape.wiki/w/Combat_Options

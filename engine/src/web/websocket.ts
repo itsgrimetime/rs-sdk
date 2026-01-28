@@ -26,8 +26,8 @@ export function handleWebSocketUpgrade(
         return undefined;
     }
 
-    // Agent SDK WebSocket proxy endpoint
-    if (url.pathname === '/agent' || url.pathname === '/agent/') {
+    // Gateway SDK WebSocket proxy endpoint
+    if (url.pathname === '/gateway' || url.pathname === '/gateway/') {
         const upgraded = server.upgrade(req, {
             data: {
                 client: new WSClientSocket(),
@@ -60,8 +60,8 @@ export function handleWebSocketUpgrade(
     return undefined;
 }
 
-export function handleAgentEndpointGet(url: URL): Response | null {
-    if (url.pathname === '/agent' || url.pathname === '/agent/') {
+export function handleGatewayEndpointGet(url: URL): Response | null {
+    if (url.pathname === '/gateway' || url.pathname === '/gateway/') {
         return new Response('WebSocket endpoint for SDK connections', { status: 200 });
     }
     return null;

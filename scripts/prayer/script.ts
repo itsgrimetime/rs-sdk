@@ -16,7 +16,7 @@
 
 import { runScript, TestPresets, StallError } from '../script-runner';
 import type { ScriptContext } from '../script-runner';
-import type { NearbyNpc } from '../../agent/types';
+import type { NearbyNpc } from '../../sdk/types';
 
 // Chicken coop is east of Lumbridge castle, near the farm
 // The coop is fenced - need to enter through the gate

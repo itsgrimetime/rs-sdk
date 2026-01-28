@@ -15,10 +15,10 @@ import { join } from 'path';
 import { mkdirSync, existsSync } from 'fs';
 import { launchBotWithSDK, sleep, type SDKSession } from '../test/utils/browser';
 import { generateSave, type TestPreset } from '../test/utils/save-generator';
-import { RunRecorder, type RunMetadata } from '../agent/run-recorder';
-import { BotSDK } from '../agent/sdk';
-import { BotActions } from '../agent/bot-actions';
-import type { BotWorldState } from '../agent/types';
+import { RunRecorder, type RunMetadata } from '../gateway/run-recorder';
+import { BotSDK } from '../sdk';
+import { BotActions } from '../sdk/actions';
+import type { BotWorldState } from '../sdk/types';
 
 // ============================================================================
 // State Delta Types & Computation

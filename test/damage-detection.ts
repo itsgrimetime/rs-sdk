@@ -17,7 +17,7 @@
 
 import { runTest, dismissDialog, sleep } from './utils/test-runner';
 import { Items } from './utils/save-generator';
-import type { InventoryItem } from '../agent/types';
+import type { InventoryItem } from '../sdk/types';
 
 const MAX_TURNS = 100;
 const DARK_WIZARDS_AREA = { x: 3230, z: 3370 };

@@ -11,7 +11,7 @@ COPY content /opt/server/content
 COPY webclient /opt/server/webclient
 COPY javaclient /opt/server/javaclient
 COPY engine /opt/server/engine
-COPY agent /opt/server/agent
+COPY gateway /opt/server/gateway
 
 WORKDIR /opt/server/engine
 
@@ -27,8 +27,8 @@ RUN sed -i 's/port: Environment.WEB_PORT,/port: Environment.WEB_PORT, hostname: 
 # Pre-build the game data
 RUN bun run build
 
-# Install agent dependencies
-WORKDIR /opt/server/agent
+# Install gateway dependencies
+WORKDIR /opt/server/gateway
 RUN bun install
 
 # Patch gateway.ts to bind to 0.0.0.0 for fly.io compatibility
@@ -76,7 +76,7 @@ fi
 
 # === START GATEWAY SERVICE ===
 echo "Starting gateway service on port 7780..."
-cd /opt/server/agent && bun run gateway.ts &
+cd /opt/server/gateway && bun run gateway.ts &
 
 # === START GAME SERVER ===
 cd /opt/server/engine

@@ -5,8 +5,8 @@
  */
 
 import puppeteer, { Browser, Page } from 'puppeteer';
-import { BotSDK } from '../../agent/sdk';
-import { BotActions } from '../../agent/bot-actions';
+import { BotSDK } from '../../sdk';
+import { BotActions } from '../../sdk/actions';
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';

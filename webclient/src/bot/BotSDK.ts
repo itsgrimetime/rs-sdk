@@ -1874,7 +1874,7 @@ export class BotOverlay {
         const host = window.location.host;
         const botUsername = getBotUsername();
         // Connect as bot (no ?bot= param - that's for SDK/UI connections)
-        const url = `${protocol}//${host}/agent`;
+        const url = `${protocol}//${host}/gateway`;
 
         try {
             this.syncWs = new WebSocket(url);

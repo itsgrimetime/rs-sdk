@@ -19,7 +19,7 @@
  */
 
 import { runTest, sleep } from './utils/test-runner';
-import type { NearbyLoc } from '../agent/types';
+import type { NearbyLoc } from '../sdk/types';
 
 const LUMBRIDGE_STAIRS = { x: 3205, z: 3208 };
 

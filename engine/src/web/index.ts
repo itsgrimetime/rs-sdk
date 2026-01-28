@@ -6,7 +6,7 @@ import { handleScriptRunsListPage, handleScriptRunsForScriptPage, handleScriptRu
 import { handleScreenshotsListPage, handleScreenshotFilePage } from './pages/screenshots.js';
 import { handleScreenshotUpload, handleExportCollisionApi } from './pages/api.js';
 import { handleDisclaimerPage, handlePublicFiles } from './pages/static.js';
-import { WebSocketData, handleWebSocketUpgrade, handleAgentEndpointGet, websocketHandlers } from './websocket.js';
+import { WebSocketData, handleWebSocketUpgrade, handleGatewayEndpointGet, websocketHandlers } from './websocket.js';
 
 export type { WebSocketData };
 
@@ -26,9 +26,9 @@ export async function startWeb() {
                 return wsResponse;
             }
 
-            // Agent endpoint GET request
-            const agentResponse = handleAgentEndpointGet(url);
-            if (agentResponse) return agentResponse;
+            // Gateway endpoint GET request
+            const gatewayResponse = handleGatewayEndpointGet(url);
+            if (gatewayResponse) return gatewayResponse;
 
             // Client pages (/, /bot, /rs2.cgi)
             const clientResponse = await handleClientPage(url);
