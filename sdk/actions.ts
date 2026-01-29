@@ -176,7 +176,7 @@ export class BotActions {
     // ============ Porcelain: Smart Actions ============
 
     async openDoor(target?: NearbyLoc | string | RegExp): Promise<OpenDoorResult> {
-        const door = await this.resolveLocation(target, /door|gate/i);
+        const door = this.resolveLocation(target, /door|gate/i);
         if (!door) {
             return { success: false, message: 'No door found nearby', reason: 'door_not_found' };
         }
@@ -197,9 +197,7 @@ export class BotActions {
                 return { success: false, message: `Could not walk to ${door.name}: ${walkResult.message}`, reason: 'walk_failed', door };
             }
 
-            // Re-scan after walking
-            const locsNow = await this.sdk.scanNearbyLocs();
-            const doorsNow = locsNow.filter(l =>
+            const doorsNow = this.sdk.getNearbyLocs().filter(l =>
                 l.x === door.x && l.z === door.z && /door|gate/i.test(l.name)
             );
             const refreshedDoor = doorsNow[0];
@@ -281,7 +279,7 @@ export class BotActions {
     async chopTree(target?: NearbyLoc | string | RegExp): Promise<ChopTreeResult> {
         await this.dismissBlockingUI();
 
-        const tree = await this.resolveLocation(target, /^tree$/i);
+        const tree = this.resolveLocation(target, /^tree$/i);
         if (!tree) {
             return { success: false, message: 'No tree found' };
         }
@@ -371,7 +369,7 @@ export class BotActions {
     }
 
     async pickupItem(target: GroundItem | string | RegExp): Promise<PickupResult> {
-        const item = await this.resolveGroundItem(target);
+        const item = this.resolveGroundItem(target);
         if (!item) {
             return { success: false, message: 'Item not found on ground', reason: 'item_not_found' };
         }
@@ -804,7 +802,7 @@ export class BotActions {
         await this.dismissBlockingUI();
 
         const banker = this.sdk.findNearbyNpc(/banker/i);
-        const bankBooth = await this.sdk.scanFindNearbyLoc(/bank booth|bank chest/i);
+        const bankBooth = this.sdk.findNearbyLoc(/bank booth|bank chest/i);
 
         let interactSuccess = false;
 
@@ -1694,7 +1692,7 @@ export class BotActions {
         }
 
         // Find anvil
-        const anvil = await this.sdk.scanFindNearbyLoc(/anvil/i);
+        const anvil = this.sdk.findNearbyLoc(/anvil/i);
         if (!anvil) {
             return { success: false, message: 'No anvil nearby', reason: 'no_anvil' };
         }
@@ -1819,21 +1817,17 @@ export class BotActions {
 
     // ============ Resolution Helpers ============
 
-    /**
-     * Resolve a location target by scanning if needed.
-     * Now async because location scanning is on-demand.
-     */
-    private async resolveLocation(
+    private resolveLocation(
         target: NearbyLoc | string | RegExp | undefined,
         defaultPattern: RegExp
-    ): Promise<NearbyLoc | null> {
+    ): NearbyLoc | null {
         if (!target) {
-            return this.sdk.scanFindNearbyLoc(defaultPattern);
+            return this.sdk.findNearbyLoc(defaultPattern);
         }
         if (typeof target === 'object' && 'x' in target) {
             return target;
         }
-        return this.sdk.scanFindNearbyLoc(target);
+        return this.sdk.findNearbyLoc(target);
     }
 
     private resolveInventoryItem(
@@ -1849,15 +1843,11 @@ export class BotActions {
         return this.sdk.findInventoryItem(target);
     }
 
-    /**
-     * Resolve a ground item target by scanning if needed.
-     * Now async because ground item scanning is on-demand.
-     */
-    private async resolveGroundItem(target: GroundItem | string | RegExp): Promise<GroundItem | null> {
+    private resolveGroundItem(target: GroundItem | string | RegExp): GroundItem | null {
         if (typeof target === 'object' && 'x' in target) {
             return target;
         }
-        return this.sdk.scanFindGroundItem(target);
+        return this.sdk.findGroundItem(target);
     }
 
     private resolveNpc(target: NearbyNpc | string | RegExp): NearbyNpc | null {

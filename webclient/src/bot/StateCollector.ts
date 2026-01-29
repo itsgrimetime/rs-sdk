@@ -70,8 +70,8 @@ export class BotStateCollector implements ScanProvider {
             combatStyle: this.collectCombatStyle(),
             nearbyNpcs: this.collectNearbyNpcs(),
             nearbyPlayers: this.collectNearbyPlayers(),
-            nearbyLocs: [],  // On-demand via scanNearbyLocs()
-            groundItems: [],  // On-demand via scanGroundItems()
+            nearbyLocs: this.scanNearbyLocs(),
+            groundItems: this.scanGroundItems(),
             gameMessages: this.collectGameMessages(),
             menuActions: this.collectMenuActions(),
             shop: this.collectShopState(),
@@ -488,7 +488,8 @@ export class BotStateCollector implements ScanProvider {
                 combatCycle,
                 animId: npc.primarySeqId ?? -1,
                 spotanimId: npc.spotanimId ?? -1,
-                optionsWithIndex
+                optionsWithIndex,
+                options: optionsWithIndex.map(o => o.text)
             });
         }
 
@@ -588,7 +589,8 @@ export class BotStateCollector implements ScanProvider {
                                     x: baseX + tileX,
                                     z: baseZ + tileZ,
                                     distance,
-                                    optionsWithIndex
+                                    optionsWithIndex,
+                                    options: optionsWithIndex.map(o => o.text)
                                 });
                             }
                         } catch { /* ignore errors */ }
@@ -620,7 +622,8 @@ export class BotStateCollector implements ScanProvider {
                                     x: baseX + tileX,
                                     z: baseZ + tileZ,
                                     distance,
-                                    optionsWithIndex
+                                    optionsWithIndex,
+                                    options: optionsWithIndex.map(o => o.text)
                                 });
                             }
                         } catch { /* ignore errors */ }
@@ -652,7 +655,8 @@ export class BotStateCollector implements ScanProvider {
                                     x: baseX + tileX,
                                     z: baseZ + tileZ,
                                     distance,
-                                    optionsWithIndex
+                                    optionsWithIndex,
+                                    options: optionsWithIndex.map(o => o.text)
                                 });
                             }
                         } catch { /* ignore errors */ }
@@ -684,7 +688,8 @@ export class BotStateCollector implements ScanProvider {
                                     x: baseX + tileX,
                                     z: baseZ + tileZ,
                                     distance,
-                                    optionsWithIndex
+                                    optionsWithIndex,
+                                    options: optionsWithIndex.map(o => o.text)
                                 });
                             }
                         } catch { /* ignore errors */ }

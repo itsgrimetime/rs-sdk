@@ -561,6 +561,38 @@ export default class LoginServer {
                             })
                             .where('username', '=', username)
                             .executeTakeFirst();
+                    } else if (type === 'sdk_auth') {
+                        // SDK/Gateway authentication - validates username/password for remote bot control
+                        const { replyTo, username, password } = msg;
+
+                        const account = await db.selectFrom('account')
+                            .where('username', '=', username)
+                            .select(['id', 'password', 'banned_until'])
+                            .executeTakeFirst();
+
+                        if (!account || !(await bcrypt.compare(password.toLowerCase(), account.password))) {
+                            s.send(JSON.stringify({
+                                replyTo,
+                                success: false,
+                                error: 'Invalid username or password'
+                            }));
+                            return;
+                        }
+
+                        if (account.banned_until !== null && new Date(account.banned_until) > new Date()) {
+                            s.send(JSON.stringify({
+                                replyTo,
+                                success: false,
+                                error: 'Account is banned'
+                            }));
+                            return;
+                        }
+
+                        s.send(JSON.stringify({
+                            replyTo,
+                            success: true,
+                            account_id: account.id
+                        }));
                     }
                 } catch (err) {
                     console.error(err);

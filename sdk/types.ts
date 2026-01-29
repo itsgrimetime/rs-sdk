@@ -251,7 +251,6 @@ export type BotAction =
     | { type: 'setTab'; tabIndex: number; reason: string }
     | { type: 'bankDeposit'; slot: number; amount: number; reason: string }
     | { type: 'bankWithdraw'; slot: number; amount: number; reason: string }
-    // On-demand scanning (returns data in action result)
     | { type: 'scanNearbyLocs'; radius?: number; reason: string }
     | { type: 'scanGroundItems'; radius?: number; reason: string };
 

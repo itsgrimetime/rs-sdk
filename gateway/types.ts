@@ -34,11 +34,16 @@ export interface SyncToBotMessage {
     screenshotId?: string;  // For screenshot_request correlation
 }
 
+// SDK connection mode
+export type SDKConnectionMode = 'control' | 'observe';
+
 // Messages from SDK → Gateway
 export interface SDKMessage {
     type: 'sdk_connect' | 'sdk_action' | 'sdk_screenshot_request';
     username: string;
+    password?: string;  // Required in production mode
     clientId?: string;
+    mode?: SDKConnectionMode;  // Connection mode: 'control' (default) or 'observe'
     actionId?: string;
     action?: BotAction;
     screenshotId?: string;  // For screenshot request correlation
@@ -46,12 +51,16 @@ export interface SDKMessage {
 
 // Messages from Gateway → SDK
 export interface SyncToSDKMessage {
-    type: 'sdk_connected' | 'sdk_state' | 'sdk_action_result' | 'sdk_error' | 'sdk_screenshot_response';
+    type: 'sdk_connected' | 'sdk_state' | 'sdk_action_result' | 'sdk_error' | 'sdk_screenshot_response' | 'sdk_info';
     success?: boolean;
     state?: BotWorldState;
+    stateReceivedAt?: number;      // Timestamp when gateway received state from bot (ms since epoch)
     actionId?: string;
     result?: ActionResult;
     error?: string;
     screenshotId?: string;  // For screenshot response correlation
     dataUrl?: string;       // Screenshot data as data URL (image/png;base64,...)
+    mode?: SDKConnectionMode;      // Connection mode (in sdk_connected response)
+    otherControllers?: number;     // Number of other controllers (in sdk_connected response)
+    message?: string;              // Info message (in sdk_info)
 }

@@ -82,14 +82,35 @@ export function formatBotState(state: BotState): string {
     }
     lines.push('');
 
-    // Nearby Locations (interactable objects) - now on-demand via SDK scan methods
+    // Nearby Locations (interactable objects)
     lines.push('--- NEARBY OBJECTS ---');
-    lines.push('(Use sdk.scanNearbyLocs() for on-demand scan)');
+    if (state.nearbyLocs.length === 0) {
+        lines.push('None');
+    } else {
+        for (let i = 0; i < Math.min(8, state.nearbyLocs.length); i++) {
+            const loc = state.nearbyLocs[i];
+            const opStr = loc.options.length > 0 ? ` [${loc.options.join(', ')}]` : '';
+            lines.push(`${loc.name} at (${loc.x}, ${loc.z}) - ${loc.distance} tiles${opStr}`);
+        }
+        if (state.nearbyLocs.length > 8) {
+            lines.push(`... and ${state.nearbyLocs.length - 8} more`);
+        }
+    }
     lines.push('');
 
-    // Ground items - now on-demand via SDK scan methods
+    // Ground items
     lines.push('--- GROUND ITEMS ---');
-    lines.push('(Use sdk.scanGroundItems() for on-demand scan)');
+    if (state.groundItems.length === 0) {
+        lines.push('None');
+    } else {
+        for (let i = 0; i < Math.min(5, state.groundItems.length); i++) {
+            const item = state.groundItems[i];
+            lines.push(`${item.name} x${item.count} - ${item.distance} tiles`);
+        }
+        if (state.groundItems.length > 5) {
+            lines.push(`... and ${state.groundItems.length - 5} more`);
+        }
+    }
     lines.push('');
 
     // Recent game messages
@@ -245,14 +266,20 @@ export function formatWorldStateForAgent(state: BotWorldState, goal: string): st
         for (const npc of state.nearbyNpcs.slice(0, 8)) {
             const lvl = npc.combatLevel > 0 ? ` (Lvl ${npc.combatLevel})` : '';
             const hp = npc.maxHp > 0 ? ` HP: ${npc.hp}/${npc.maxHp}` : '';
-            const optTexts = npc.optionsWithIndex.map(o => o.text);
-            const opts = optTexts.length > 0 ? ` [${optTexts.join(', ')}]` : '';
+            const opts = npc.options.length > 0 ? ` [${npc.options.join(', ')}]` : '';
             lines.push(`- ${npc.name}${lvl}${hp} - ${npc.distance} tiles away, index: ${npc.index}${opts}`);
         }
     }
 
-    // Nearby Objects note - scanning is now on-demand
-    // (Removed auto-display since nearbyLocs is empty until scanned)
+    // Nearby Objects (trees, rocks, doors, etc.)
+    if (state.nearbyLocs && state.nearbyLocs.length > 0) {
+        lines.push('');
+        lines.push('### Nearby Objects');
+        for (const loc of state.nearbyLocs.slice(0, 10)) {
+            const opts = loc.options.length > 0 ? ` [${loc.options.join(', ')}]` : '';
+            lines.push(`- ${loc.name} at (${loc.x}, ${loc.z}) - ${loc.distance} tiles, id: ${loc.id}${opts}`);
+        }
+    }
 
     // Inventory summary
     if (state.inventory.length > 0) {
@@ -267,8 +294,14 @@ export function formatWorldStateForAgent(state: BotWorldState, goal: string): st
         }
     }
 
-    // Ground items note - scanning is now on-demand
-    // (Removed auto-display since groundItems is empty until scanned)
+    // Ground items
+    if (state.groundItems.length > 0) {
+        lines.push('');
+        lines.push('### Ground Items Nearby');
+        for (const item of state.groundItems.slice(0, 5)) {
+            lines.push(`- ${item.name} x${item.count} at (${item.x}, ${item.z}), ${item.distance} tiles`);
+        }
+    }
 
     // Recent game messages
     if (state.gameMessages && state.gameMessages.length > 0) {

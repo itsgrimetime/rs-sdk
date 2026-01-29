@@ -106,14 +106,14 @@ async function findTarget(ctx: ScriptContext, pattern: RegExp): Promise<NearbyNp
 
 ## Looting Ground Items
 
-**CRITICAL**: Use `sdk.getGroundItems()` NOT `state.nearbyLocs` for dropped items!
+**CRITICAL**: Use `sdk.scanGroundItems()` NOT `state.nearbyLocs` for dropped items!
 
 ```typescript
 // WRONG - nearbyLocs is for static objects (trees, rocks, etc.)
 const loot = state.nearbyLocs.filter(i => /hide/i.test(i.name));  // Won't work!
 
-// CORRECT - getGroundItems() for drops
-const groundItems = await ctx.sdk.getGroundItems();
+// CORRECT - scanGroundItems() for drops
+const groundItems = await ctx.sdk.scanGroundItems();
 const loot = groundItems.filter(i => /hide|bones|coins/i.test(i.name));
 ```
 
@@ -123,7 +123,7 @@ Pick up a few items (e.g. 3), then return to combat. Prevents getting stuck in i
 
 ```typescript
 const MAX_PICKUPS = 3;
-const groundItems = await ctx.sdk.getGroundItems();
+const groundItems = await ctx.sdk.scanGroundItems();
 const loot = groundItems
     .filter(i => /hide|bones/i.test(i.name))
     .filter(i => i.distance < 5)

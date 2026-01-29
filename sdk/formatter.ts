@@ -4,13 +4,27 @@
 import type { BotWorldState, SkillState } from './types';
 
 /**
+ * Format a duration in ms to human readable string
+ */
+function formatAge(ms: number): string {
+    if (ms < 1000) return 'just now';
+    const seconds = Math.floor(ms / 1000);
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ${seconds % 60}s ago`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ${minutes % 60}m ago`;
+}
+
+/**
  * Format world state as readable plaintext/markdown
  */
-export function formatWorldState(state: BotWorldState): string {
+export function formatWorldState(state: BotWorldState, stateAgeMs?: number): string {
     const lines: string[] = [];
 
     lines.push('# World State');
-    lines.push(`Tick: ${state.tick} | In Game: ${state.inGame}`);
+    const ageStr = stateAgeMs !== undefined ? ` | Updated: ${formatAge(stateAgeMs)}` : '';
+    lines.push(`Tick: ${state.tick} | In Game: ${state.inGame}${ageStr}`);
 
     // Player info
     if (state.player) {
@@ -131,7 +145,7 @@ export function formatWorldState(state: BotWorldState): string {
             } else {
                 itemCounts.set(item.name, {
                     count: item.count,
-                    options: item.optionsWithIndex.map(o => o.text)
+                    options: item.optionsWithIndex?.map(o => o.text) ?? []
                 });
             }
         }
@@ -169,7 +183,7 @@ export function formatWorldState(state: BotWorldState): string {
             const lvl = npc.combatLevel > 0 ? ` (Lvl ${npc.combatLevel})` : '';
             const hp = npc.maxHp > 0 ? ` HP: ${npc.hp}/${npc.maxHp}` : '';
             const combat = npc.inCombat ? ' [in combat]' : '';
-            const opts = npc.options.length > 0 ? ` [${npc.options.join(', ')}]` : '';
+            const opts = npc.options?.length > 0 ? ` [${npc.options.join(', ')}]` : '';
             lines.push(`- ${npc.name}${lvl}${hp}${combat} - ${npc.distance} tiles (idx: ${npc.index})${opts}`);
         }
         if (state.nearbyNpcs.length > 10) {
@@ -189,12 +203,12 @@ export function formatWorldState(state: BotWorldState): string {
         }
     }
 
-    // Nearby Locs (if scanned)
+    // Nearby Locs
     if (state.nearbyLocs.length > 0) {
         lines.push('');
         lines.push('## Nearby Objects');
         for (const loc of state.nearbyLocs.slice(0, 10)) {
-            const opts = loc.options.length > 0 ? ` [${loc.options.join(', ')}]` : '';
+            const opts = loc.options?.length > 0 ? ` [${loc.options.join(', ')}]` : '';
             lines.push(`- ${loc.name} at (${loc.x}, ${loc.z}) - ${loc.distance} tiles${opts}`);
         }
         if (state.nearbyLocs.length > 10) {
@@ -202,7 +216,7 @@ export function formatWorldState(state: BotWorldState): string {
         }
     }
 
-    // Ground Items (if scanned)
+    // Ground Items
     if (state.groundItems.length > 0) {
         lines.push('');
         lines.push('## Ground Items');

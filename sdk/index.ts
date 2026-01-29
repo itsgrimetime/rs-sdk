@@ -23,6 +23,7 @@ interface SyncToSDKMessage {
     type: 'sdk_connected' | 'sdk_state' | 'sdk_action_result' | 'sdk_error' | 'sdk_screenshot_response';
     success?: boolean;
     state?: BotWorldState;
+    stateReceivedAt?: number;  // Timestamp when gateway received state from bot
     actionId?: string;
     result?: ActionResult;
     error?: string;
@@ -46,6 +47,7 @@ export class BotSDK {
     readonly config: Required<SDKConfig>;
     private ws: WebSocket | null = null;
     private state: BotWorldState | null = null;
+    private stateReceivedAt: number = 0;
     private pendingActions = new Map<string, PendingAction>();
     private pendingScreenshots = new Map<string, PendingScreenshot>();
     private stateListeners = new Set<(state: BotWorldState) => void>();
@@ -409,6 +411,17 @@ export class BotSDK {
         return this.state;
     }
 
+    /** Get timestamp when state was last received (ms since epoch) */
+    getStateReceivedAt(): number {
+        return this.stateReceivedAt;
+    }
+
+    /** Get age of current state in milliseconds */
+    getStateAge(): number {
+        if (this.stateReceivedAt === 0) return 0;
+        return Date.now() - this.stateReceivedAt;
+    }
+
     getSkill(name: string): SkillState | null {
         if (!this.state) return null;
         return this.state.skills.find(s =>
@@ -516,8 +529,7 @@ export class BotSDK {
     // Use these for expensive scans of nearby locations and ground items
 
     /**
-     * Scan for nearby locations (trees, rocks, doors, etc.) on-demand.
-     * This is more efficient than constantly pushing this data in state updates.
+     * Scan for nearby locations with custom radius.
      * @param radius - Scan radius in tiles (default 15)
      * @returns Array of nearby locations sorted by distance
      */
@@ -866,6 +878,8 @@ export class BotSDK {
 
         if (message.type === 'sdk_state' && message.state) {
             this.state = message.state;
+            // Use server timestamp if available, otherwise use local time
+            this.stateReceivedAt = message.stateReceivedAt || Date.now();
             for (const listener of this.stateListeners) {
                 try {
                     listener(message.state);

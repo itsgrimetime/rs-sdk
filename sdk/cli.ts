@@ -19,8 +19,8 @@ function printUsage() {
 SDK CLI - Dump world state for a connected bot
 
 Usage:
-  bun sdk/cli.ts <username> <password> [options]
-  USERNAME=<user> PASSWORD=<pw> bun sdk/cli.ts [options]
+  bun sdk/cli.ts <username> [password] [options]
+  USERNAME=<user> bun sdk/cli.ts [options]
 
 Options:
   --server <host>   Server hostname (default: rs-sdk-demo.fly.dev)
@@ -29,13 +29,13 @@ Options:
 
 Environment Variables:
   USERNAME          Bot username
-  PASSWORD          Bot password
+  PASSWORD          Bot password (required for remote servers)
   SERVER            Server hostname
 
 Examples:
+  bun sdk/cli.ts mybot --server localhost
   bun sdk/cli.ts mybot secret
-  bun sdk/cli.ts mybot secret --server localhost
-  SERVER=localhost USERNAME=mybot PASSWORD=secret bun sdk/cli.ts
+  bun sdk/cli.ts mybot secret --server rs-sdk-demo.fly.dev
 `.trim());
 }
 
@@ -67,14 +67,22 @@ async function main() {
     if (positional[0]) username = positional[0];
     if (positional[1]) password = positional[1];
 
-    if (!username || !password) {
-        console.error('Error: Username and password required');
+    // Derive if local
+    const isLocal = server === 'localhost' || server.startsWith('localhost:');
+
+    if (!username) {
+        console.error('Error: Username required');
+        console.error('Usage: bun sdk/cli.ts <username> [password] [--server <host>]');
+        process.exit(1);
+    }
+
+    if (!password && !isLocal) {
+        console.error('Error: Password required for remote servers');
         console.error('Usage: bun sdk/cli.ts <username> <password> [--server <host>]');
         process.exit(1);
     }
 
     // Derive gateway URL
-    const isLocal = server === 'localhost' || server.startsWith('localhost:');
     const gatewayUrl = isLocal
         ? `ws://${server.includes(':') ? server : server + ':7780'}`
         : `wss://${server}/gateway`;
@@ -125,7 +133,7 @@ async function main() {
     }
 
     // Output formatted state
-    console.log(formatWorldState(state));
+    console.log(formatWorldState(state, sdk.getStateAge()));
 
     sdk.disconnect();
     process.exit(0);

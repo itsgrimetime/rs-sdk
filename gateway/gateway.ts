@@ -4,15 +4,95 @@
 
 import type {
     BotWorldState,
-    BotAction,
-    ActionResult,
     BotClientMessage,
     SyncToBotMessage,
     SDKMessage,
-    SyncToSDKMessage
+    SyncToSDKMessage,
+    SDKConnectionMode
 } from './types';
 
 const GATEWAY_PORT = parseInt(process.env.AGENT_PORT || '7780');
+
+// Login server configuration - when enabled, SDK connections require per-bot authentication
+const LOGIN_SERVER_ENABLED = process.env.LOGIN_SERVER === 'true';
+const LOGIN_HOST = process.env.LOGIN_HOST || 'localhost';
+const LOGIN_PORT = parseInt(process.env.LOGIN_PORT || '43500');
+
+// ============ Login Server Client ============
+
+let loginServerWs: WebSocket | null = null;
+let loginServerConnected = false;
+const pendingAuthRequests = new Map<string, {
+    resolve: (result: { success: boolean; error?: string }) => void;
+    timeout: ReturnType<typeof setTimeout>;
+}>();
+
+function connectToLoginServer() {
+    if (!LOGIN_SERVER_ENABLED) return;
+
+    const url = `ws://${LOGIN_HOST}:${LOGIN_PORT}`;
+    console.log(`[Gateway] Connecting to login server at ${url}...`);
+
+    loginServerWs = new WebSocket(url);
+
+    loginServerWs.onopen = () => {
+        loginServerConnected = true;
+        console.log(`[Gateway] Connected to login server`);
+    };
+
+    loginServerWs.onmessage = (event) => {
+        try {
+            const msg = JSON.parse(event.data.toString());
+            if (msg.replyTo && pendingAuthRequests.has(msg.replyTo)) {
+                const pending = pendingAuthRequests.get(msg.replyTo)!;
+                clearTimeout(pending.timeout);
+                pendingAuthRequests.delete(msg.replyTo);
+                pending.resolve({ success: msg.success, error: msg.error });
+            }
+        } catch (e) {
+            console.error('[Gateway] Error parsing login server message:', e);
+        }
+    };
+
+    loginServerWs.onclose = () => {
+        loginServerConnected = false;
+        console.log(`[Gateway] Disconnected from login server, reconnecting in 5s...`);
+        setTimeout(connectToLoginServer, 5000);
+    };
+
+    loginServerWs.onerror = (error) => {
+        console.error(`[Gateway] Login server connection error`);
+    };
+}
+
+async function authenticateSDK(username: string, password: string): Promise<{ success: boolean; error?: string }> {
+    if (!LOGIN_SERVER_ENABLED) {
+        // No login server - allow all connections (development mode)
+        return { success: true };
+    }
+
+    if (!loginServerConnected || !loginServerWs) {
+        return { success: false, error: 'Login server not available' };
+    }
+
+    const replyTo = `auth-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+            pendingAuthRequests.delete(replyTo);
+            resolve({ success: false, error: 'Authentication timeout' });
+        }, 10000);
+
+        pendingAuthRequests.set(replyTo, { resolve, timeout });
+
+        loginServerWs!.send(JSON.stringify({
+            type: 'sdk_auth',
+            replyTo,
+            username,
+            password
+        }));
+    });
+}
 
 // ============ Types ============
 
@@ -21,6 +101,7 @@ interface BotSession {
     clientId: string;
     username: string;
     lastState: BotWorldState | null;
+    lastStateReceivedAt: number;
     currentActionId: string | null;
     pendingScreenshotId: string | null;
 }
@@ -29,6 +110,7 @@ interface SDKSession {
     ws: any;
     sdkClientId: string;
     targetUsername: string;
+    mode: SDKConnectionMode;
 }
 
 // ============ State ============
@@ -70,6 +152,14 @@ const SyncModule = {
         return sessions;
     },
 
+    getControllersForBot(username: string): SDKSession[] {
+        return this.getSDKSessionsForBot(username).filter(s => s.mode === 'control');
+    },
+
+    getObserversForBot(username: string): SDKSession[] {
+        return this.getSDKSessionsForBot(username).filter(s => s.mode === 'observe');
+    },
+
     extractUsernameFromClientId(clientId: string | undefined): string | null {
         if (!clientId) return null;
         if (clientId.startsWith('bot-')) return null;
@@ -95,6 +185,7 @@ const SyncModule = {
                 clientId,
                 username,
                 lastState: existingSession?.lastState || null,
+                lastStateReceivedAt: existingSession?.lastStateReceivedAt || 0,
                 currentActionId: null,
                 pendingScreenshotId: null
             };
@@ -135,8 +226,13 @@ const SyncModule = {
 
         if (message.type === 'state' && message.state) {
             session.lastState = message.state;
+            session.lastStateReceivedAt = Date.now();
             for (const sdkSession of this.getSDKSessionsForBot(session.username)) {
-                this.sendToSDK(sdkSession, { type: 'sdk_state', state: message.state });
+                this.sendToSDK(sdkSession, {
+                    type: 'sdk_state',
+                    state: message.state,
+                    stateReceivedAt: session.lastStateReceivedAt
+                });
             }
         }
 
@@ -155,22 +251,49 @@ const SyncModule = {
         }
     },
 
-    handleSDKMessage(ws: any, message: SDKMessage) {
+    async handleSDKMessage(ws: any, message: SDKMessage) {
         if (message.type === 'sdk_connect') {
             const sdkClientId = message.clientId || `sdk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
             const targetUsername = message.username;
+            const mode: SDKConnectionMode = message.mode || 'control';
 
-            const session: SDKSession = { ws, sdkClientId, targetUsername };
+            // Authenticate via login server (if enabled)
+            const authResult = await authenticateSDK(targetUsername, message.password || '');
+            if (!authResult.success) {
+                console.log(`[Gateway] SDK auth failed: ${sdkClientId} -> ${targetUsername} (${authResult.error})`);
+                ws.send(JSON.stringify({
+                    type: 'sdk_error',
+                    error: `Authentication failed: ${authResult.error}`
+                }));
+                ws.close();
+                return;
+            }
+
+            const session: SDKSession = { ws, sdkClientId, targetUsername, mode };
             sdkSessions.set(sdkClientId, session);
             wsToType.set(ws, { type: 'sdk', id: sdkClientId });
 
-            console.log(`[Gateway] SDK connected: ${sdkClientId} -> ${targetUsername}`);
+            // Count other controllers (excluding this one)
+            const otherControllers = this.getControllersForBot(targetUsername)
+                .filter(s => s.sdkClientId !== sdkClientId).length;
 
-            this.sendToSDK(session, { type: 'sdk_connected', success: true });
+            const authStatus = LOGIN_SERVER_ENABLED ? ' (authenticated)' : '';
+            console.log(`[Gateway] SDK connected: ${sdkClientId} -> ${targetUsername} (mode: ${mode})${authStatus}`);
+
+            this.sendToSDK(session, {
+                type: 'sdk_connected',
+                success: true,
+                mode,
+                otherControllers
+            });
 
             const botSession = botSessions.get(targetUsername);
             if (botSession?.lastState) {
-                this.sendToSDK(session, { type: 'sdk_state', state: botSession.lastState });
+                this.sendToSDK(session, {
+                    type: 'sdk_state',
+                    state: botSession.lastState,
+                    stateReceivedAt: botSession.lastStateReceivedAt
+                });
             }
             return;
         }
@@ -181,6 +304,17 @@ const SyncModule = {
 
             const sdkSession = sdkSessions.get(wsInfo.id);
             if (!sdkSession) return;
+
+            // Gate actions based on mode - observe mode cannot send actions
+            if (sdkSession.mode === 'observe') {
+                this.sendToSDK(sdkSession, {
+                    type: 'sdk_error',
+                    actionId: message.actionId,
+                    error: 'Cannot send actions in observe mode'
+                });
+                console.log(`[Gateway] [${sdkSession.targetUsername}] Rejected action from observe-mode SDK: ${message.action?.type}`);
+                return;
+            }
 
             const botSession = botSessions.get(message.username || sdkSession.targetUsername);
             if (!botSession || !botSession.ws) {
@@ -257,7 +391,7 @@ const SyncModule = {
 
 // ============ Message Router ============
 
-function handleMessage(ws: any, data: string) {
+async function handleMessage(ws: any, data: string) {
     let parsed: any;
     try {
         parsed = JSON.parse(data);
@@ -272,14 +406,14 @@ function handleMessage(ws: any, data: string) {
         if (wsInfo.type === 'bot') {
             SyncModule.handleBotMessage(ws, parsed);
         } else if (wsInfo.type === 'sdk') {
-            SyncModule.handleSDKMessage(ws, parsed);
+            await SyncModule.handleSDKMessage(ws, parsed);
         }
         return;
     }
 
     // Route based on message type for new connections
     if (parsed.type?.startsWith('sdk_')) {
-        SyncModule.handleSDKMessage(ws, parsed);
+        await SyncModule.handleSDKMessage(ws, parsed);
     } else if (parsed.type === 'connected' || parsed.type === 'state' || parsed.type === 'actionResult') {
         SyncModule.handleBotMessage(ws, parsed);
     }
@@ -317,6 +451,34 @@ const server = Bun.serve({
             return new Response(null, { headers: corsHeaders });
         }
 
+        // Per-bot status endpoint: /status/:username
+        const botStatusMatch = url.pathname.match(/^\/status\/(.+)$/);
+        if (botStatusMatch && botStatusMatch[1]) {
+            const username = decodeURIComponent(botStatusMatch[1]);
+            const botSession = botSessions.get(username);
+
+            const controllers = SyncModule.getControllersForBot(username).map(s => s.sdkClientId);
+            const observers = SyncModule.getObserversForBot(username).map(s => s.sdkClientId);
+
+            const response = {
+                username,
+                connected: botSession?.ws !== null,
+                inGame: botSession?.lastState?.inGame || false,
+                controllers,
+                observers,
+                lastStateTime: botSession?.lastState?.tick || 0,
+                player: botSession?.lastState?.player ? {
+                    name: botSession.lastState.player.name,
+                    worldX: botSession.lastState.player.worldX,
+                    worldZ: botSession.lastState.player.worldZ
+                } : null
+            };
+
+            return new Response(JSON.stringify(response, null, 2), {
+                headers: { 'Content-Type': 'application/json', ...corsHeaders }
+            });
+        }
+
         // Status endpoint
         if (url.pathname === '/' || url.pathname === '/status') {
             const bots: Record<string, any> = {};
@@ -332,7 +494,10 @@ const server = Bun.serve({
 
             const sdks: Record<string, any> = {};
             for (const [id, session] of sdkSessions) {
-                sdks[id] = { targetUsername: session.targetUsername };
+                sdks[id] = {
+                    targetUsername: session.targetUsername,
+                    mode: session.mode
+                };
             }
 
             return new Response(JSON.stringify({
@@ -349,7 +514,8 @@ const server = Bun.serve({
         return new Response(`Gateway Service (port ${GATEWAY_PORT})
 
 Endpoints:
-- GET /status    Connection status
+- GET /status              All connections status
+- GET /status/:username    Per-bot status (controllers, observers)
 
 WebSocket:
 - ws://localhost:${GATEWAY_PORT}    Bot/SDK connections
@@ -377,3 +543,11 @@ Bots: ${botSessions.size} | SDKs: ${sdkSessions.size}
 
 console.log(`[Gateway] Gateway running at http://localhost:${GATEWAY_PORT}`);
 console.log(`[Gateway] Bot/SDK: ws://localhost:${GATEWAY_PORT}`);
+
+// Connect to login server for authentication
+if (LOGIN_SERVER_ENABLED) {
+    console.log(`[Gateway] Authentication ENABLED (via login server)`);
+    connectToLoginServer();
+} else {
+    console.log(`[Gateway] Authentication DISABLED (set LOGIN_SERVER=true to enable)`);
+}
