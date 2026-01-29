@@ -8,7 +8,6 @@
 
 import { runTest, sleep } from './utils/test-runner';
 import { Items, Locations } from './utils/save-generator';
-import { BotActions } from '../sdk/actions';
 
 runTest({
     name: 'Fletching Test (BotActions)',
@@ -20,7 +19,7 @@ runTest({
         ],
     },
     launchOptions: { skipTutorial: false },
-}, async ({ sdk }) => {
+}, async ({ sdk, bot}) => {
     console.log('Goal: Use knife on logs to gain Fletching XP');
 
     await sdk.waitForCondition(s => (s.player?.worldX ?? 0) > 0 && s.inventory.length > 0, 10000);
@@ -38,7 +37,6 @@ runTest({
     console.log(`Have ${knife.name} and ${logs.name} x${logs.count}`);
 
     // Use high-level BotActions for fletching
-    const bot = new BotActions(sdk);
     console.log('Using bot.fletchLogs() to create arrow shafts...');
     const result = await bot.fletchLogs('arrow shaft');
 

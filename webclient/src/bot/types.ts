@@ -69,6 +69,8 @@ export interface NearbyNpc {
     /** Current spot animation ID (-1 = none) */
     spotanimId: number;
     optionsWithIndex: NpcOption[];  // Options with op index (use .map(o => o.text) for display)
+    /** Convenience array of option text strings */
+    options: string[];
 }
 
 export interface NearbyPlayer {
@@ -101,6 +103,8 @@ export interface NearbyLoc {
     z: number;
     distance: number;
     optionsWithIndex: LocOption[];  // Options with op index (use .map(o => o.text) for display)
+    /** Convenience array of option text strings */
+    options: string[];
 }
 
 export interface MenuAction {

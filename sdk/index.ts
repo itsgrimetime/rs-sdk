@@ -69,7 +69,8 @@ export class BotSDK {
             host: config.host || 'localhost',
             port: config.port || 7780,
             connectionMode: config.connectionMode || 'control',
-            autoLaunchBrowser: config.autoLaunchBrowser ?? false,
+            autoLaunchBrowser: config.autoLaunchBrowser ?? 'auto',
+            freshDataThreshold: config.freshDataThreshold ?? 3000,
             browserLaunchUrl: config.browserLaunchUrl || '',
             browserLaunchTimeout: config.browserLaunchTimeout || 30000,
             actionTimeout: config.actionTimeout || 30000,
@@ -99,16 +100,16 @@ export class BotSDK {
             this.setConnectionState('connecting');
         }
 
-        // Auto-launch browser if configured and bot not connected
+        // Auto-launch browser based on config
         if (this.config.autoLaunchBrowser && !isReconnect) {
             try {
                 const status = await this.checkBotStatus();
-                if (!status.connected) {
-                    console.log(`[BotSDK] Bot not connected, launching browser...`);
+                const shouldLaunch = this.shouldLaunchBrowser(status);
+
+                if (shouldLaunch) {
+                    console.log(`[BotSDK] Launching browser...`);
                     await this.launchBrowser();
                     await this.waitForBotConnection();
-                } else {
-                    console.log(`[BotSDK] Bot already connected (${status.controllers.length} controllers, ${status.observers.length} observers)`);
                 }
             } catch (error) {
                 console.error(`[BotSDK] Auto-launch failed:`, error);
@@ -290,6 +291,46 @@ export class BotSDK {
     async isBotConnected(): Promise<boolean> {
         const status = await this.checkBotStatus();
         return status.connected;
+    }
+
+    /**
+     * Determine if browser should be launched based on config and current status.
+     * - 'auto': Launch only if no fresh state data (client not actively sending)
+     * - true: Launch if bot not connected
+     * - false: Never launch
+     */
+    private shouldLaunchBrowser(status: BotStatus): boolean {
+        if (this.config.autoLaunchBrowser === false) {
+            return false;
+        }
+
+        if (this.config.autoLaunchBrowser === true) {
+            // Legacy behavior: launch if not connected
+            if (!status.connected) {
+                console.log(`[BotSDK] Bot not connected`);
+                return true;
+            }
+            console.log(`[BotSDK] Bot already connected (${status.controllers.length} controllers, ${status.observers.length} observers)`);
+            return false;
+        }
+
+        // 'auto' mode: check for fresh state data
+        if (!status.connected) {
+            console.log(`[BotSDK] Bot not connected`);
+            return true;
+        }
+
+        // Check if state data is fresh (client actively sending)
+        const stateAge = status.lastStateTime > 0 ? Date.now() - status.lastStateTime : Infinity;
+        const isFresh = stateAge < this.config.freshDataThreshold;
+
+        if (isFresh) {
+            console.log(`[BotSDK] Active client detected (state age: ${Math.round(stateAge)}ms), skipping browser launch`);
+            return false;
+        }
+
+        console.log(`[BotSDK] No fresh state data (age: ${stateAge === Infinity ? 'never' : Math.round(stateAge) + 'ms'})`);
+        return true;
     }
 
     /**

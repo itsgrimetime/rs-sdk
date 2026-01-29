@@ -462,7 +462,7 @@ const server = Bun.serve({
 
             const response = {
                 username,
-                connected: botSession?.ws !== null,
+                connected: !!botSession?.ws,
                 inGame: botSession?.lastState?.inGame || false,
                 controllers,
                 observers,

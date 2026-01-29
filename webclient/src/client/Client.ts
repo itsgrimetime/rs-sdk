@@ -2113,14 +2113,15 @@ export class Client extends GameShell {
             }
 
             // Debug: log component info
-            if (depth === 0) {
-                console.log(`[Interface ${this.viewportInterfaceId}] Root has ${com.children?.length || 0} children`);
-            }
+            // (we may need to bring these back for introspection skill  development and debugging new this.closeInterfaces)
+            // if (depth === 0) {
+            //     console.log(`[Interface ${this.viewportInterfaceId}] Root has ${com.children?.length || 0} children`);
+            // }
 
-            // Debug: log all components with button types
-            if (com.buttonType && com.buttonType > 0) {
-                console.log(`[Interface ${this.viewportInterfaceId}] Component ${comId}: buttonType=${com.buttonType}, option="${com.option}", text="${com.text}"`);
-            }
+            // // Debug: log all components with button types
+            // if (com.buttonType && com.buttonType > 0) {
+            //     console.log(`[Interface ${this.viewportInterfaceId}] Component ${comId}: buttonType=${com.buttonType}, option="${com.option}", text="${com.text}"`);
+            // }
 
             // Check for various button types used in interfaces
             // BUTTON_OK (1), BUTTON_TARGET (2), BUTTON_SELECT (5) - all can be clickable options

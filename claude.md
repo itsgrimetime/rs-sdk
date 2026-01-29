@@ -1,49 +1,67 @@
-# RS-Agent Remote Script Guide
+# RS-Agent Bot Guide
 
-How to write scripts that connect to the demo server using the SDK and open the client in the browser.
+You're here to play the mmo game through the progressive development of botting scripts, starting small then adapting to your desires and ideas.
 
-## Quick Start
+## First Time Setup
+
+**Step 1: Create an account**
+
+Ask the user for a bot name (max 12 chars, alphanumeric). If they skip, generate a random alphanumeric 9 character string.
+
+
+**Step 2: Create a bot folder (or cd into an existing one)**
 
 ```bash
-# Run script (connects to demo server by default)
-USERNAME=mybot bun scripts/example-remote.ts
-
-# Connect to localhost instead (for local dev)
-SERVER=localhost USERNAME=mybot bun scripts/example-remote.ts
+mkdir -p bots/{username}
 ```
 
-## Writing a Remote Script
+Create three files:
 
-Create a new script in `scripts/`:
+**bots/{username}/bot.env**
+```bash
+USERNAME={username}
+PASSWORD={random 12-char alphanumeric}
+SERVER=rs-sdk-demo.fly.dev
+```
 
+**bots/{username}/lab_log.md**
+```markdown
+# {username} Lab Log
+
+## Session 1 
+
+### Goals
+-
+
+### Observations
+-
+
+### Next Steps
+
+### Possible SDK Bugs or Improvements:
+-
+```
+
+**bots/{username}/script.ts**
 ```typescript
 #!/usr/bin/env bun
-import { BotSDK, BotActions } from '../sdk/actions';
-import puppeteer from 'puppeteer';
+import { BotSDK, BotActions } from '../../sdk/actions';
 
-// Config - defaults to demo server
+// Load config from environment (set by bot.env)
+const USERNAME = process.env.USERNAME!;
+const PASSWORD = process.env.PASSWORD!;
 const SERVER = process.env.SERVER || 'rs-sdk-demo.fly.dev';
-const USERNAME = process.env.USERNAME || 'mybot';
-const IS_LOCAL = SERVER === 'localhost';
 
-// Derive URLs from server
-const CLIENT_URL = IS_LOCAL
-    ? `http://${SERVER}:8888/bot?bot=${USERNAME}&password=test`
-    : `https://${SERVER}/bot?bot=${USERNAME}&password=test`;
-const GATEWAY_URL = IS_LOCAL
+const GATEWAY_URL = SERVER === 'localhost'
     ? `ws://${SERVER}:7780`
     : `wss://${SERVER}/gateway`;
 
 async function main() {
-    // 1. Open browser with game client
-    const browser = await puppeteer.launch({ headless: false });
-    const page = await browser.newPage();
-    await page.goto(CLIENT_URL, { waitUntil: 'networkidle2', timeout: 60000 });
-
-    // 2. Create SDK and connect
     const sdk = new BotSDK({
         botUsername: USERNAME,
-        gatewayUrl: GATEWAY_URL
+        password: PASSWORD,
+        gatewayUrl: GATEWAY_URL,
+        autoLaunchBrowser: true,
     });
 
     sdk.onConnectionStateChange((state) => {
@@ -51,29 +69,120 @@ async function main() {
     });
 
     await sdk.connect();
+    await sdk.waitForCondition(s => s.inGame, 60000);
 
-    // 3. Wait for bot to be in-game
-    await sdk.waitForCondition(s => s.inGame, 30000);
-
-    // 4. Use high-level BotActions
     const bot = new BotActions(sdk);
+    const state = sdk.getState()!;
+    console.log(`In-game as ${state.player?.name} at (${state.player?.worldX}, ${state.player?.worldZ})`);
 
-    // Your automation logic here
+    // === YOUR SCRIPT LOGIC BELOW ===
+
+    // Example: chop a tree
     const tree = sdk.findNearbyLoc(/^tree$/i);
     if (tree) {
-        await bot.chopTree(tree);
+        console.log(`Found tree at (${tree.x}, ${tree.z})`);
+        const result = await bot.chopTree(tree);
+        console.log(result.message);
     }
 
-    // Keep running
-    await new Promise(() => {});
+    // === END SCRIPT LOGIC ===
+
+    // Keep running for 60 seconds (adjust as needed)
+    await new Promise(r => setTimeout(r, 60_000));
+    await sdk.disconnect();
 }
 
 main().catch(console.error);
 ```
 
-## SDK Layers
+## Session Workflow
 
-**BotSDK** (low-level) - Resolves when game acknowledges action:
+This is a **persistent character** - you don't restart fresh each time. The workflow is:
+
+### 1. Check World State First
+
+Before writing any script, check where the bot is and what it has:
+
+```bash
+source bots/{username}/bot.env && bun sdk/cli.ts
+```
+
+This shows: position, inventory, skills, nearby NPCs/objects, and more.
+
+**Exception**: Skip this if you just created the character and know it's at spawn.
+
+### 2. Write Your Script
+
+Edit `bots/{username}/script.ts` with your goal. Keep scripts focused on one task.
+
+### 3. Run the Script
+
+```bash
+source bots/{username}/bot.env && bun bots/{username}/script.ts
+```
+
+### 4. Observe and Iterate
+
+Watch the output. After the script finishes (or fails), check state again:
+
+```bash
+source bots/{username}/bot.env && bun sdk/cli.ts
+```
+
+Record observations in `lab_log.md`, then improve the script.
+
+## Script Duration Guidelines
+
+**Start short, extend as you gain confidence:**
+
+| Duration | Use When |
+|----------|----------|
+| **30-60s** | New script, untested logic, debugging |
+| **2-5 min** | Validated approach, building confidence |
+| **10+ min** | Proven strategy, grinding runs |
+
+A failed 10-minute run wastes more time than five 1-minute diagnostic runs. **Fail fast.**
+
+Timeouts in scripts:
+```typescript
+// Short run for testing
+await new Promise(r => setTimeout(r, 60_000));  // 60 seconds
+
+// Longer run once proven
+await new Promise(r => setTimeout(r, 5 * 60_000));  // 5 minutes
+```
+
+## SDK Quick Reference
+
+### Checking State
+
+```typescript
+const state = sdk.getState();           // Full world state
+const skill = sdk.getSkill('Woodcutting');
+const item = sdk.findInventoryItem(/logs/i);
+const npc = sdk.findNearbyNpc(/chicken/i);
+const loc = sdk.findNearbyLoc(/tree/i);
+const loot = sdk.findGroundItem(/bones/i);
+```
+
+### High-Level Actions (BotActions)
+
+These wait for the effect to complete:
+
+```typescript
+await bot.walkTo(x, z);           // Pathfinding + arrival
+await bot.chopTree();             // Waits for logs in inventory
+await bot.attackNpc(/chicken/i);  // Engage in combat
+await bot.pickupItem(/bones/i);   // Walk + pickup
+await bot.openShop(/keeper/i);    // Find NPC, trade
+await bot.equipItem(/sword/i);    // Equip from inventory
+await bot.eatFood(/shrimp/i);     // Eat food
+```
+
+### Low-Level Actions (BotSDK)
+
+These resolve when the server acknowledges, not when complete:
+
 ```typescript
 await sdk.sendWalk(x, z, running);
 await sdk.sendInteractNpc(npcIndex, optionIndex);
@@ -81,75 +190,83 @@ await sdk.sendInteractLoc(x, z, locId, optionIndex);
 await sdk.sendPickup(x, z, itemId);
 ```
 
-**BotActions** (high-level) - Resolves when effect completes:
-```typescript
-await bot.walkTo(x, z);           // Pathfinding + arrival
-await bot.chopTree();             // Waits for logs in inventory
-await bot.attackNpc(/chicken/);   // Combat with timeout
-await bot.openShop('shopkeeper'); // Find, interact, verify
-await bot.pickupItem('logs');     // Walk, pickup, verify
-```
-
-## Querying State
+### Waiting for Conditions
 
 ```typescript
-const state = sdk.getState();          // Full world state
-const skill = sdk.getSkill('Woodcutting');
-const item = sdk.findInventoryItem(/logs/i);
-const npc = sdk.findNearbyNpc(/chicken/i);
-const tree = sdk.findNearbyLoc(/tree/i);
-const loot = sdk.findGroundItem(/bones/i);
-
-// Wait for conditions
 await sdk.waitForCondition(s => s.inventory.length > 5, 10000);
+await sdk.waitForCondition(s => !s.dialog.isOpen, 5000);
+await bot.waitForSkillLevel('Woodcutting', 10, 60000);
 ```
 
-## Browser URL Parameters
+## Common Patterns
 
-```
-https://rs-sdk-demo.fly.dev/bot?bot=NAME&password=test&fps=15&tst=1
-```
+### Dismiss Level-Up Dialogs
 
-| Param | Description |
-|-------|-------------|
-| `bot` | Bot username (required) |
-| `password` | Auth password (use `test`) |
-| `fps` | Frame rate (optional) |
-| `tst` | Test mode - hides UI panels (optional) |
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SERVER` | `rs-sdk-demo.fly.dev` | Server host (demo or localhost) |
-| `USERNAME` | `mybot` | Bot name (max 12 chars) |
-
-## Connection Config
+Level-up dialogs block all actions. Always handle them:
 
 ```typescript
-// Demo server (path-based routing)
-const sdk = new BotSDK({
-    botUsername: 'mybot',
-    gatewayUrl: 'wss://rs-sdk-demo.fly.dev/gateway'
-});
+// In your main loop
+if (sdk.getState()?.dialog.isOpen) {
+    await sdk.sendClickDialog(0);
+    await new Promise(r => setTimeout(r, 300));
+}
 
-// Local development (port-based)
-const sdk = new BotSDK({
-    botUsername: 'mybot',
-    host: 'localhost',
-    port: 7780
-});
+// Or use the helper
+await bot.dismissBlockingUI();
+```
+
+### Main Loop with Timeout
+
+```typescript
+const DURATION = 60_000;  // 60 seconds
+const startTime = Date.now();
+
+while (Date.now() - startTime < DURATION) {
+    // Dismiss any blocking dialogs
+    await bot.dismissBlockingUI();
+
+    // Your logic here
+    const tree = sdk.findNearbyLoc(/^tree$/i);
+    if (tree) {
+        await bot.chopTree(tree);
+    }
+
+    await new Promise(r => setTimeout(r, 500));
+}
+```
+
+### Error Handling
+
+```typescript
+const result = await bot.chopTree();
+if (!result.success) {
+    console.log(`Failed: ${result.message}`);
+    // Handle failure - maybe walk somewhere else, wait, etc.
+}
 ```
 
 ## Project Structure
 
 ```
+bots/
+└── {username}/
+    ├── bot.env        # Credentials (USERNAME, PASSWORD, SERVER)
+    ├── lab_log.md     # Session notes and observations
+    └── script.ts      # Current script
 
 sdk/
-├── index.ts              # BotSDK (low-level)
-├── actions.ts            # BotActions (high-level)
-└── types.ts              # Type definitions
+├── index.ts           # BotSDK (low-level)
+├── actions.ts         # BotActions (high-level)
+├── cli.ts             # CLI for checking state
+└── types.ts           # Type definitions
 ```
 
-## See Also
+## Troubleshooting
 
+**"No state received"** - Bot isn't connected to game. Open browser first or use `autoLaunchBrowser: true`.
+
+**Script stalls** - Check for open dialogs (`state.dialog.isOpen`). Level-ups block everything.
+
+**"Can't reach"** - Path is blocked. Try walking closer first, or find a different target.
+
+**Wrong target** - Use more specific regex patterns: `/^tree$/i` not `/tree/i` (which matches "tree stump").

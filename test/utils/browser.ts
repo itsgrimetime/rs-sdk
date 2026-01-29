@@ -335,51 +335,93 @@ export async function skipTutorial(sdk: BotSDK, maxAttempts: number = 30): Promi
  * Launches browser, connects SDK, and skips tutorial.
  * This is the main entry point for most tests.
  *
+ * @param usePuppeteer - If true, uses Puppeteer (headless capable). If false, uses native browser.
  * @param useSharedBrowser - If true, uses a shared browser instance (for load tests)
  * @param background - If true, spawns window off-screen (won't steal focus)
  */
 export async function launchBotWithSDK(
     botName?: string,
-    options: { headless?: boolean; skipTutorial?: boolean; useSharedBrowser?: boolean; background?: boolean } = {}
+    options: { headless?: boolean; skipTutorial?: boolean; useSharedBrowser?: boolean; background?: boolean; usePuppeteer?: boolean } = {}
 ): Promise<SDKSession> {
     const shouldSkipTutorial = options.skipTutorial ?? true;
+    const usePuppeteer = options.usePuppeteer ?? false;
 
-    // Launch browser
-    const browser = await launchBotBrowser(botName, {
-        headless: options.headless,
-        useSharedBrowser: options.useSharedBrowser,
-        background: options.background
+    if (usePuppeteer) {
+        // Puppeteer mode (for CI/headless)
+        const browser = await launchBotBrowser(botName, {
+            headless: options.headless,
+            useSharedBrowser: options.useSharedBrowser,
+            background: options.background
+        });
+
+        const sdk = new BotSDK({
+            botUsername: browser.botName,
+            autoLaunchBrowser: false  // Puppeteer already launched
+        });
+        await sdk.connect();
+        await sdk.waitForCondition(s => s.inGame, 30000);
+
+        if (shouldSkipTutorial) {
+            const success = await skipTutorial(sdk, 30);
+            if (!success) {
+                await sdk.disconnect();
+                await browser.cleanup();
+                throw new Error('Failed to skip tutorial');
+            }
+            await sleep(1000);
+        }
+
+        const bot = new BotActions(sdk);
+        return {
+            ...browser,
+            sdk,
+            bot,
+            cleanup: async () => {
+                await sdk.disconnect();
+                await browser.cleanup();
+            }
+        };
+    }
+
+    // Native browser mode (default) - SDK opens system browser
+    const name = botName || 'bot' + Math.random().toString(36).substring(2, 5);
+
+    const sdk = new BotSDK({
+        botUsername: name,
+        password: 'test',
+        autoLaunchBrowser: true,
+        browserLaunchUrl: BOT_URL,
     });
 
-    // Connect SDK
-    const sdk = new BotSDK({ botUsername: browser.botName });
+    sdk.onConnectionStateChange((state) => {
+        console.log(`[SDK] Connection: ${state}`);
+    });
+
     await sdk.connect();
+    await sdk.waitForCondition(s => s.inGame, 60000);
 
-    // Wait for game state
-    await sdk.waitForCondition(s => s.inGame, 30000);
+    console.log(`[SDK] Bot '${name}' logged in and in-game`);
 
-    // Skip tutorial if requested
     if (shouldSkipTutorial) {
         const success = await skipTutorial(sdk, 30);
         if (!success) {
             await sdk.disconnect();
-            await browser.cleanup();
             throw new Error('Failed to skip tutorial');
         }
-        // Wait for state to settle after tutorial
         await sleep(1000);
     }
 
-    // Create porcelain wrapper
     const bot = new BotActions(sdk);
 
     return {
-        ...browser,
+        browser: null as any,  // No Puppeteer browser
+        page: null as any,     // No Puppeteer page
+        botName: name,
         sdk,
         bot,
         cleanup: async () => {
             await sdk.disconnect();
-            await browser.cleanup();
+            // Native browser stays open - user can close it manually
         }
     };
 }

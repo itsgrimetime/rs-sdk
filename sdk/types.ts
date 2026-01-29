@@ -278,8 +278,15 @@ export interface SDKConfig {
     port?: number;
     /** Connection mode: 'control' (default) can send actions, 'observe' is read-only */
     connectionMode?: SDKConnectionMode;
-    /** Auto-launch browser if bot not connected (default: false) */
-    autoLaunchBrowser?: boolean;
+    /**
+     * Auto-launch browser behavior:
+     * - 'auto' (default): Launch only if no active client with fresh state data
+     * - true: Always launch if bot not connected
+     * - false: Never auto-launch
+     */
+    autoLaunchBrowser?: boolean | 'auto';
+    /** How recent state data must be (ms) to be considered "fresh" in auto mode (default: 3000) */
+    freshDataThreshold?: number;
     /** Override client URL for auto-launch (derived from gatewayUrl if not set) */
     browserLaunchUrl?: string;
     /** Timeout waiting for bot to connect after browser launch (default: 30000ms) */
