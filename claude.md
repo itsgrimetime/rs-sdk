@@ -21,6 +21,66 @@ This automatically creates:
 - `bots/{username}/lab_log.md` - Session notes template
 - `bots/{username}/script.ts` - Ready-to-run starter script
 
+## MCP Integration (Interactive Mode)
+
+The MCP server auto-discovers via `.mcp.json` when you open the project in Claude Code.
+
+### Quick Start
+
+1. Install dependencies: `cd mcp && bun install`
+2. Open project in Claude Code — approve the MCP server when prompted
+3. Control your bot:
+
+```
+Execute code on "mybot" to check the state
+```
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `execute_code(bot_name, code)` | Run code on a bot. Auto-connects on first use. |
+| `list_bots()` | List connected bots |
+| `disconnect_bot(name)` | Disconnect a bot |
+
+### Example
+
+```typescript
+// Just execute - auto-connects on first use
+execute_code({
+  bot_name: "mybot",
+  code: `
+    const state = sdk.getState();
+    console.log('Position:', state.player.worldX, state.player.worldZ);
+
+    // Chop trees for 1 minute
+    const endTime = Date.now() + 60_000;
+    while (Date.now() < endTime) {
+      await bot.dismissBlockingUI();
+      const tree = sdk.findNearbyLoc(/^tree$/i);
+      if (tree) await bot.chopTree(tree);
+    }
+
+    return sdk.getInventory();
+  `
+})
+```
+
+### Multiple Bots
+
+Control multiple bots simultaneously — each auto-connects on first use:
+
+```typescript
+execute_code({ bot_name: "woodcutter", code: "await bot.chopTree()" })
+execute_code({ bot_name: "miner", code: "await bot.mineRock()" })
+```
+
+**When to use MCP vs Scripts:**
+- **MCP**: Interactive exploration, quick tests, conversational bot control
+- **Scripts**: Long-running automation, reproducible tasks, version control
+
+See `mcp/README.md` for detailed API reference.
+
 ## Session Workflow
 
 This is a **persistent character** - you don't restart fresh each time. The workflow is:
@@ -141,6 +201,16 @@ sdk/
 ├── actions.ts         # BotActions (high-level)
 ├── cli.ts             # CLI for checking state
 └── types.ts           # Type definitions
+
+mcp/
+├── server.ts          # MCP server entry point
+├── api/
+│   ├── index.ts       # BotManager (multi-bot connections)
+│   ├── bot.ts         # High-level API docs
+│   └── sdk.ts         # Low-level API docs
+└── README.md          # MCP setup guide
+
+.mcp.json              # Claude Code auto-discovery config
 ```
 
 ## Troubleshooting
