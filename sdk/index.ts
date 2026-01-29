@@ -397,7 +397,7 @@ export class BotSDK {
         if (this.config.browserLaunchUrl) {
             const url = new URL(this.config.browserLaunchUrl);
             url.searchParams.set('bot', this.config.botUsername);
-            url.searchParams.set('password', 'test');
+            url.searchParams.set('password', this.config.password);
             return url.toString();
         }
 
@@ -406,7 +406,7 @@ export class BotSDK {
 
         if (gatewayUrl.includes('localhost') || gatewayUrl.includes('127.0.0.1')) {
             // Local development: assume client on port 8888
-            return `http://localhost:8888/bot?bot=${encodeURIComponent(this.config.botUsername)}&password=test`;
+            return `http://localhost:8888/bot?bot=${encodeURIComponent(this.config.botUsername)}&password=${encodeURIComponent(this.config.password)}`;
         }
 
         // Remote: assume same host with /bot path
@@ -415,7 +415,7 @@ export class BotSDK {
             .replace(/^wss:/, 'https:')
             .replace(/\/gateway$/, '');
 
-        return `${httpUrl}/bot?bot=${encodeURIComponent(this.config.botUsername)}&password=test`;
+        return `${httpUrl}/bot?bot=${encodeURIComponent(this.config.botUsername)}&password=${encodeURIComponent(this.config.password)}`;
     }
 
     async waitForConnection(timeout: number = 60000): Promise<void> {

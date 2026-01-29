@@ -47,7 +47,7 @@ export { formatBotState, formatWorldStateForAgent } from './formatters.js';
 export { ActionExecutor, formatAction, type ActionResult, type ActionResultOrPromise } from './ActionExecutor.js';
 
 // Gateway connection
-export { GatewayConnection, type GatewayMessageHandler } from './GatewayConnection.js';
+export { GatewayConnection, type GatewayMessageHandler, getBotUsername, getBotPassword } from './GatewayConnection.js';
 
 // UI
 export { OverlayUI, type OverlayUICallbacks } from './OverlayUI.js';

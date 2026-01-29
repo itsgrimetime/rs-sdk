@@ -19,7 +19,7 @@ Create three files:
 
 **bots/{username}/bot.env**
 ```bash
-USERNAME={username}
+BOT_USERNAME={username}
 PASSWORD={random 12-char alphanumeric}
 SERVER=rs-sdk-demo.fly.dev
 ```
@@ -48,7 +48,7 @@ SERVER=rs-sdk-demo.fly.dev
 import { BotSDK, BotActions } from '../../sdk/actions';
 
 // Load config from environment (set by bot.env)
-const USERNAME = process.env.USERNAME!;
+const BOT_USERNAME = process.env.BOT_USERNAME!;
 const PASSWORD = process.env.PASSWORD!;
 const SERVER = process.env.SERVER || 'rs-sdk-demo.fly.dev';
 
@@ -58,7 +58,7 @@ const GATEWAY_URL = SERVER === 'localhost'
 
 async function main() {
     const sdk = new BotSDK({
-        botUsername: USERNAME,
+        botUsername: BOT_USERNAME,
         password: PASSWORD,
         gatewayUrl: GATEWAY_URL,
         autoLaunchBrowser: true,
@@ -104,7 +104,7 @@ This is a **persistent character** - you don't restart fresh each time. The work
 Before writing any script, check where the bot is and what it has:
 
 ```bash
-source bots/{username}/bot.env && bun sdk/cli.ts
+cd bots/{username} && bun --env-file=bot.env ../../sdk/cli.ts
 ```
 
 This shows: position, inventory, skills, nearby NPCs/objects, and more.
@@ -118,7 +118,7 @@ Edit `bots/{username}/script.ts` with your goal. Keep scripts focused on one tas
 ### 3. Run the Script
 
 ```bash
-source bots/{username}/bot.env && bun bots/{username}/script.ts
+cd bots/{username} && bun --env-file=bot.env script.ts
 ```
 
 ### 4. Observe and Iterate
@@ -126,7 +126,7 @@ source bots/{username}/bot.env && bun bots/{username}/script.ts
 Watch the output. After the script finishes (or fails), check state again:
 
 ```bash
-source bots/{username}/bot.env && bun sdk/cli.ts
+cd bots/{username} && bun --env-file=bot.env ../../sdk/cli.ts
 ```
 
 Record observations in `lab_log.md`, then improve the script.
@@ -250,7 +250,7 @@ if (!result.success) {
 ```
 bots/
 └── {username}/
-    ├── bot.env        # Credentials (USERNAME, PASSWORD, SERVER)
+    ├── bot.env        # Credentials (BOT_USERNAME, PASSWORD, SERVER)
     ├── lab_log.md     # Session notes and observations
     └── script.ts      # Current script
 

@@ -1,36 +1,48 @@
+# syntax=docker/dockerfile:1
 FROM oven/bun:debian
 
-RUN apt update \
-  && apt install -y --no-install-recommends default-jdk git ca-certificates bash sqlite3 \
-  && rm -rf /var/lib/apt/lists/*
+# Install system deps with cache mount
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt update && apt install -y --no-install-recommends \
+    default-jdk git ca-certificates bash sqlite3
 
 WORKDIR /opt/server
 
-# Copy vendored repositories
+# === DEPENDENCY LAYER (cached unless package files change) ===
+
+# Copy only package files first
+COPY engine/package.json engine/bun.lock /opt/server/engine/
+COPY gateway/package.json gateway/bun.lock /opt/server/gateway/
+
+# Install engine deps with bun cache mount
+WORKDIR /opt/server/engine
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install
+
+# Install gateway deps with bun cache mount
+WORKDIR /opt/server/gateway
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install
+
+# === SOURCE LAYER (rebuilds on code changes, but deps cached) ===
+
+WORKDIR /opt/server
+
+# Copy source code
 COPY content /opt/server/content
 COPY webclient /opt/server/webclient
 COPY engine /opt/server/engine
 COPY gateway /opt/server/gateway
 
+# Patch and build engine
 WORKDIR /opt/server/engine
+RUN cp .env.example .env && \
+    sed -i 's/port: Environment.WEB_PORT,/port: Environment.WEB_PORT, hostname: "0.0.0.0",/' src/web/index.ts && \
+    bun run build
 
-# Install dependencies
-RUN bun install
-
-# Copy default env
-RUN cp .env.example .env
-
-# Patch web/index.ts to bind to 0.0.0.0 for fly.io compatibility
-RUN sed -i 's/port: Environment.WEB_PORT,/port: Environment.WEB_PORT, hostname: "0.0.0.0",/' src/web/index.ts
-
-# Pre-build the game data
-RUN bun run build
-
-# Install gateway dependencies
+# Patch gateway
 WORKDIR /opt/server/gateway
-RUN bun install
-
-# Patch gateway.ts to bind to 0.0.0.0 for fly.io compatibility
 RUN sed -i 's/port: GATEWAY_PORT,/port: GATEWAY_PORT, hostname: "0.0.0.0",/' gateway.ts
 
 WORKDIR /opt/server

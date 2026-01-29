@@ -28,7 +28,8 @@ Options:
   --help            Show this help
 
 Environment Variables:
-  USERNAME          Bot username
+  BOT_USERNAME      Bot username (preferred, avoids macOS USERNAME conflict)
+  USERNAME          Bot username (fallback)
   PASSWORD          Bot password (required for remote servers)
   SERVER            Server hostname
 
@@ -43,7 +44,7 @@ async function main() {
     const args = process.argv.slice(2);
 
     // Parse args
-    let username = process.env.USERNAME || '';
+    let username = process.env.BOT_USERNAME || process.env.USERNAME || '';
     let password = process.env.PASSWORD || '';
     let server = process.env.SERVER || 'rs-sdk-demo.fly.dev';
     let timeout = 5000;
@@ -87,12 +88,13 @@ async function main() {
         ? `ws://${server.includes(':') ? server : server + ':7780'}`
         : `wss://${server}/gateway`;
 
-    // Create SDK
+    // Create SDK - never auto-launch browser in CLI mode
     const sdk = new BotSDK({
         botUsername: username,
         password,
         gatewayUrl,
-        autoReconnect: false
+        autoReconnect: false,
+        autoLaunchBrowser: false
     });
 
     // Connect with timeout
@@ -116,6 +118,7 @@ async function main() {
     }
 
     const state = sdk.getState();
+    const stateAge = sdk.getStateAge();
 
     if (!state) {
         console.error(`Error: No state received for '${username}'`);
@@ -125,15 +128,19 @@ async function main() {
         process.exit(1);
     }
 
+    // Warn about stale data (> 5 seconds old)
+    const STALE_THRESHOLD = 5000;
+    if (stateAge > STALE_THRESHOLD) {
+        console.log(`⚠ STALE DATA: State is ${Math.round(stateAge / 1000)}s old (bot may not be actively connected)\n`);
+    }
+
     if (!state.inGame) {
-        console.error(`Error: Bot '${username}' is not in-game`);
-        console.error(`  inGame: ${state.inGame}, tick: ${state.tick}`);
-        sdk.disconnect();
-        process.exit(1);
+        console.log(`Note: Bot '${username}' is not in-game (tick: ${state.tick})`);
+        console.log(`Last known state:\n`);
     }
 
     // Output formatted state
-    console.log(formatWorldState(state, sdk.getStateAge()));
+    console.log(formatWorldState(state, stateAge));
 
     sdk.disconnect();
     process.exit(0);

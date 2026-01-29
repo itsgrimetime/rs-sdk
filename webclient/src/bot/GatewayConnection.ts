@@ -10,11 +10,20 @@ export interface GatewayMessageHandler {
     onDisconnected(): void;
 }
 
-// Extract bot username from URL query params
-function getBotUsername(): string {
-    if (typeof window === 'undefined') return 'default';
-    const params = new URLSearchParams(window.location.search);
-    return params.get('bot') || 'default';
+// Extract bot credentials from URL query params
+function getUrlParams(): URLSearchParams | null {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search);
+}
+
+export function getBotUsername(): string {
+    const params = getUrlParams();
+    return params?.get('bot') || 'default';
+}
+
+export function getBotPassword(): string | null {
+    const params = getUrlParams();
+    return params?.get('password') || null;
 }
 
 export class GatewayConnection {

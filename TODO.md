@@ -31,10 +31,23 @@ Test with sonnet.
 
 Refine sdk connection management
 Refine a runner-script in claude.md with nice feedback
-
-Repo needs to be a prompt that's all compatible
+Clean up scripts and bot_arcs they're out of date
+Potentially check for breakage from all our sdk churn
 consider typescript MCP again
 
 
 save file Download/upload flow! (no guarantees for save file durabilitiy  
+
+
+
+
+
+
+Two problems today:
+Stability
+- Save file durability (corruption, clobbering)
+- Connection confusion and stability (engine->bot client->gateway->sdk client has many points of failure)
+
+Dev Ergonomics:
+claude.md + runner script + speed. This is easy if we can get stability
 
