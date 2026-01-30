@@ -521,7 +521,7 @@ export class Client extends GameShell {
         let acc: number = 0;
         for (let i: number = 0; i < 99; i++) {
             const level: number = i + 1;
-            const delta: number = (level + Math.pow(2.0, level / 25.0) * 300.0) | 0;
+            const delta: number = (level + Math.pow(2.0, level / 15.0) * 300.0) | 0;
             acc += delta;
             this.levelExperience[i] = (acc / 4) | 0;
         }
