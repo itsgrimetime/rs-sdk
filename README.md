@@ -48,6 +48,17 @@ This server has a few modifications from the original game to make development a
 
 - [Bun 1.2+](https://bun.sh)
 
+## Running the server locally:
+You want:
+```sh 
+cd engine && bun run start
+```
+```sh 
+cd webclient && bun run watch
+```
+```sh 
+cd gateway && bun run gateway
+```
 
 ## Disclaimer
 
