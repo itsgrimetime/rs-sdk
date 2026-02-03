@@ -45,7 +45,7 @@ Warning: The demo server is offered as a convenience, and we do not guarantee up
 
 This server has a few modifications from the original game to make development and bot testing easier:
 
-- **Faster leveling** - The XP curve is made accelerated and less steep so high-level skills don't take as long to train.
+- **Faster leveling** - The XP curve is made accelerated and less steep.
 - **Infinite run energy** - Players never run out of energy 
 - **No random events** - Anti-botting random events are disabled 
 
