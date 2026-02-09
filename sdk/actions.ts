@@ -574,7 +574,6 @@ export class BotActions {
         }
 
         const invCountBefore = this.sdk.getInventory().length;
-        const startTick = this.sdk.getState()?.tick || 0;
 
         // Walk to the item's exact tile first
         const walkResult = await this.walkTo(item.x, item.z, 0);
@@ -584,6 +583,9 @@ export class BotActions {
 
         // Wait one tick before picking up
         await this.sdk.waitForTicks(1);
+
+        // Capture startTick AFTER walk so we only check messages from the pickup, not the walk
+        const startTick = this.sdk.getState()?.tick || 0;
 
         // Now send the pickup command
         const result = await this.sdk.sendPickup(item.x, item.z, item.id);
