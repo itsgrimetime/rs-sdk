@@ -58,11 +58,13 @@ for (const dir of outDirs) {
 for (const outDir of ['out/standard', 'out/bot']) {
     fs.copyFileSync('src/3rdparty/bzip2-wasm/bzip2.wasm', `${outDir}/bzip2.wasm`);
     fs.copyFileSync('src/3rdparty/tinymidipcm/tinymidipcm.wasm', `${outDir}/tinymidipcm.wasm`);
+    fs.copyFileSync('src/3rdparty/tinymidipcm/SCC1_Florestan.sf2', `${outDir}/SCC1_Florestan.sf2`);
 }
 
 // Also copy to root out for backwards compatibility
 fs.copyFileSync('src/3rdparty/bzip2-wasm/bzip2.wasm', 'out/bzip2.wasm');
 fs.copyFileSync('src/3rdparty/tinymidipcm/tinymidipcm.wasm', 'out/tinymidipcm.wasm');
+fs.copyFileSync('src/3rdparty/tinymidipcm/SCC1_Florestan.sf2', 'out/SCC1_Florestan.sf2');
 
 const args = process.argv.slice(2);
 const prod = args[0] !== 'dev';
@@ -124,6 +126,7 @@ const viewerScript = await bunBuild(
 fs.writeFileSync('out/viewer/viewer.js', replaceDepsUrl(viewerScript.source));
 fs.copyFileSync('src/3rdparty/bzip2-wasm/bzip2.wasm', 'out/viewer/bzip2.wasm');
 fs.copyFileSync('src/3rdparty/tinymidipcm/tinymidipcm.wasm', 'out/viewer/tinymidipcm.wasm');
+fs.copyFileSync('src/3rdparty/tinymidipcm/SCC1_Florestan.sf2', 'out/viewer/SCC1_Florestan.sf2');
 fs.writeFileSync('out/viewer/deps.js', deps.source);
 
 // Copy bot client to root out for backwards compatibility

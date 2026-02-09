@@ -573,7 +573,16 @@ export class BotActions {
         const invCountBefore = this.sdk.getInventory().length;
         const startTick = this.sdk.getState()?.tick || 0;
 
-        // Send pickup directly - game client handles walk-to-interact via MOVE_OPCLICK
+        // Walk to the item's exact tile first
+        const walkResult = await this.walkTo(item.x, item.z, 0);
+        if (!walkResult.success) {
+            return { success: false, message: walkResult.message, reason: 'cant_reach' };
+        }
+
+        // Wait one tick before picking up
+        await this.sdk.waitForTicks(1);
+
+        // Now send the pickup command
         const result = await this.sdk.sendPickup(item.x, item.z, item.id);
         if (!result.success) {
             return { success: false, message: result.message };
@@ -610,6 +619,10 @@ export class BotActions {
             }
 
             const pickedUp = this.sdk.getInventory().find(i => i.id === item.id);
+
+            // Wait one tick after picking up
+            await this.sdk.waitForTicks(1);
+
             return { success: true, item: pickedUp, message: `Picked up ${item.name}` };
         } catch {
             return { success: false, message: 'Timed out waiting for pickup', reason: 'timeout' };

@@ -196,10 +196,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
           // Execute code with 10 minute timeout
           const EXECUTION_TIMEOUT = 10 * 60 * 1000;
+          let timeoutId: ReturnType<typeof setTimeout>;
           const timeoutPromise = new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error(`Code execution timed out after 10 minutes`)), EXECUTION_TIMEOUT);
+            timeoutId = setTimeout(() => reject(new Error(`Code execution timed out after 10 minutes`)), EXECUTION_TIMEOUT);
           });
-          const result = await Promise.race([fn(connection.bot, connection.sdk), timeoutPromise]);
+          let result: any;
+          try {
+            result = await Promise.race([fn(connection.bot, connection.sdk), timeoutPromise]);
+          } finally {
+            clearTimeout(timeoutId!);
+          }
 
           // Build formatted output
           const parts: string[] = [];
