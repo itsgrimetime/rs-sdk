@@ -74,8 +74,6 @@ runTest({
 
     for (const target of WALK_TARGETS) {
         console.log(`\n-> ${target.label} (${target.x}, ${target.z})`);
-        await bot.dismissBlockingUI();
-
         const result = await bot.walkTo(target.x, target.z, WALK_TOLERANCE);
         const s = sdk.getState();
         const px = s?.player?.worldX ?? 0;

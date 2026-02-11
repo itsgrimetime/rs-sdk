@@ -135,8 +135,6 @@ runTest({
 
         // Smith each product
         for (const product of PRODUCTS) {
-            await bot.dismissBlockingUI();
-
             const barCount = sdk.getInventory()
                 .filter((i: any) => barType.pattern.test(i.name))
                 .reduce((sum: number, i: any) => sum + i.count, 0);

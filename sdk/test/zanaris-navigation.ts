@@ -71,8 +71,6 @@ runTest({
 
     for (const target of ZANARIS_LANDMARKS) {
         console.log(`\nWalking to ${target.label} (${target.x}, ${target.z})...`);
-        await bot.dismissBlockingUI();
-
         const result = await bot.walkTo(target.x, target.z, WALK_TOLERANCE);
 
         const state = sdk.getState();

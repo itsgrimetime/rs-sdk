@@ -204,6 +204,8 @@ export class BotActions {
 
     /** Open a door or gate, walking to it if needed. */
     async openDoor(target?: NearbyLoc | string | RegExp): Promise<OpenDoorResult> {
+        await this.dismissBlockingUI();
+
         const door = this.helpers.resolveLocation(target, /door|gate/i);
         if (!door) {
             return { success: false, message: 'No door found nearby', reason: 'door_not_found' };
@@ -570,6 +572,8 @@ export class BotActions {
     }
 
     private async _pickupItemOnce(target: GroundItem | string | RegExp): Promise<PickupResult> {
+        await this.dismissBlockingUI();
+
         const item = this.helpers.resolveGroundItem(target);
         if (!item) {
             return { success: false, message: 'Item not found on ground', reason: 'item_not_found' };
@@ -725,6 +729,8 @@ export class BotActions {
 
     /** Walk to coordinates using pathfinding, auto-opening doors. */
     async walkTo(x: number, z: number, tolerance: number = 3): Promise<ActionResult> {
+        await this.dismissBlockingUI();
+
         const state = this.sdk.getState();
         if (!state?.player) return { success: false, message: 'No player state' };
 
@@ -892,6 +898,8 @@ export class BotActions {
 
     /** Open a shop by trading with an NPC. */
     async openShop(target: NearbyNpc | string | RegExp = /shop\s*keeper/i): Promise<ActionResult> {
+        await this.dismissBlockingUI();
+
         const npc = this.helpers.resolveNpc(target);
         if (!npc) {
             return { success: false, message: 'Shopkeeper not found' };
@@ -1342,6 +1350,8 @@ export class BotActions {
 
     /** Equip an item from inventory. */
     async equipItem(target: InventoryItem | string | RegExp): Promise<EquipResult> {
+        await this.dismissBlockingUI();
+
         const item = this.helpers.resolveInventoryItem(target, /./);
         if (!item) {
             return { success: false, message: `Item not found: ${target}` };
@@ -1370,6 +1380,8 @@ export class BotActions {
 
     /** Unequip an item to inventory. */
     async unequipItem(target: InventoryItem | string | RegExp): Promise<UnequipResult> {
+        await this.dismissBlockingUI();
+
         let item: InventoryItem | null = null;
         if (typeof target === 'object' && 'slot' in target) {
             item = target;
@@ -1413,6 +1425,8 @@ export class BotActions {
 
     /** Eat food to restore hitpoints. */
     async eatFood(target: InventoryItem | string | RegExp): Promise<EatResult> {
+        await this.dismissBlockingUI();
+
         const food = this.helpers.resolveInventoryItem(target, /./);
         if (!food) {
             return { success: false, hpGained: 0, message: `Food not found: ${target}` };
@@ -1447,6 +1461,8 @@ export class BotActions {
 
     /** Attack an NPC, walking to it if needed. */
     async attackNpc(target: NearbyNpc | string | RegExp, timeout: number = 5000): Promise<AttackResult> {
+        await this.dismissBlockingUI();
+
         const npc = this.helpers.resolveNpc(target);
         if (!npc) {
             return { success: false, message: `NPC not found: ${target}`, reason: 'npc_not_found' };
@@ -1526,6 +1542,8 @@ export class BotActions {
 
     /** Cast a combat spell on an NPC. */
     async castSpellOnNpc(target: NearbyNpc | string | RegExp, spellComponent: number, timeout: number = 3000): Promise<CastSpellResult> {
+        await this.dismissBlockingUI();
+
         const npc = this.helpers.resolveNpc(target);
         if (!npc) {
             return { success: false, message: `NPC not found: ${target}`, reason: 'npc_not_found' };
@@ -2465,6 +2483,8 @@ export class BotActions {
     }
 
     private async _pickpocketNpcOnce(target: NearbyNpc | string | RegExp): Promise<PickpocketResult> {
+        await this.dismissBlockingUI();
+
         const npc = this.helpers.resolveNpc(target);
         if (!npc) {
             return { success: false, message: `NPC not found: ${target}`, reason: 'npc_not_found' };
@@ -2533,6 +2553,8 @@ export class BotActions {
      * Checks preconditions (level, prayer points, not already active) before toggling.
      */
     async activatePrayer(prayer: PrayerName | number): Promise<PrayerResult> {
+        await this.dismissBlockingUI();
+
         const index = typeof prayer === 'number' ? prayer : PRAYER_INDICES[prayer];
         if (index === undefined || index < 0 || index > 14) {
             return { success: false, message: `Invalid prayer: ${prayer}`, reason: 'invalid_prayer' };
@@ -2582,6 +2604,8 @@ export class BotActions {
      * Checks if the prayer is actually active before toggling.
      */
     async deactivatePrayer(prayer: PrayerName | number): Promise<PrayerResult> {
+        await this.dismissBlockingUI();
+
         const index = typeof prayer === 'number' ? prayer : PRAYER_INDICES[prayer];
         if (index === undefined || index < 0 || index > 14) {
             return { success: false, message: `Invalid prayer: ${prayer}`, reason: 'invalid_prayer' };

@@ -73,8 +73,6 @@ runTest({
 
     for (const target of WALK_TARGETS) {
         console.log(`\nWalking to ${target.label} (${target.x}, ${target.z})...`);
-        await bot.dismissBlockingUI();
-
         const result = await bot.walkTo(target.x, target.z, WALK_TOLERANCE);
 
         const afterState = sdk.getState();
