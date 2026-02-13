@@ -372,11 +372,11 @@ for (const skill of SKILLS) {
 
   mkdirSync(testsDir, { recursive: true });
 
-  // Placeholder Dockerfile — not used when docker_image is set in task.toml,
-  // but Harbor's _validate_definition requires it to exist.
+  // Dockerfile for cloud providers (Daytona) that don't support docker_image.
+  // Just pulls the pre-built image — no additional build steps needed.
   const envDir = join(taskDir, 'environment');
   mkdirSync(envDir, { recursive: true });
-  writeFileSync(join(envDir, 'Dockerfile'), `# Placeholder — uses docker_image from task.toml\nFROM scratch\n`);
+  writeFileSync(join(envDir, 'Dockerfile'), `FROM ${DOCKER_IMAGE}\n`);
 
   writeFileSync(join(taskDir, 'task.toml'), skillToml);
   writeFileSync(join(taskDir, 'instruction.md'), generateInstructionMd(skill));
@@ -400,15 +400,14 @@ for (const variant of VARIANTS) {
     join(testsDir, variant.verifier),
   );
 
-  // Generate environment/Dockerfile for tasks needing custom env,
-  // or a placeholder for docker_image tasks
+  // Dockerfile for cloud providers (Daytona) — either custom env or
+  // a thin FROM layer on the pre-built image.
   const envDir = join(taskDir, 'environment');
   mkdirSync(envDir, { recursive: true });
-  if (variant.environmentDockerfile) {
-    writeFileSync(join(envDir, 'Dockerfile'), variant.environmentDockerfile);
-  } else {
-    writeFileSync(join(envDir, 'Dockerfile'), `# Placeholder — uses docker_image from task.toml\nFROM scratch\n`);
-  }
+  writeFileSync(
+    join(envDir, 'Dockerfile'),
+    variant.environmentDockerfile ?? `FROM ${DOCKER_IMAGE}\n`,
+  );
 }
 
 console.log(`\nDone! Generated ${SKILLS.length + VARIANTS.length} task directories.`);

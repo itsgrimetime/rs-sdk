@@ -19,6 +19,21 @@ bun benchmark/generate-tasks.ts
 
 Run this before `harbor run`. Generated directories are gitignored.
 
+## Running on Daytona (cloud)
+
+```bash
+export DAYTONA_API_KEY=<your-key>
+bun benchmark/generate-tasks.ts
+harbor run -p benchmark/<task-dir> -a <agent> -m <model> --env daytona
+```
+
+Run the full dataset with parallelism:
+```bash
+harbor run -p benchmark/ -a claude-code -m anthropic/claude-sonnet-4-20250514 --env daytona -n 16
+```
+
+Each task has an `environment/Dockerfile` that `FROM`s the pre-built GHCR image, so Daytona pulls the image with no build step beyond the layer cache.
+
 ## Adding a new task
 
 1. Add a new entry to the `SKILLS` array (for standard XP-grind tasks) or `VARIANTS` array (for custom tasks) in `generate-tasks.ts`
