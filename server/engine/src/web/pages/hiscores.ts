@@ -158,9 +158,10 @@ export async function handleHiscoresPlayerPage(url: URL): Promise<Response | nul
             rank = String((Number(rankResult?.rank) || 0) + 1);
         }
 
+        const iconFile = skill.name.toLowerCase() + '.png';
         skillRows.push(`
             <tr>
-                <td><a href="/hiscores?category=${skill.id + 1}&profile=${profile}" class="c">${skill.name}</a></td>
+                <td><a href="/hiscores?category=${skill.id + 1}&profile=${profile}" class="c"><img src="/img/skill/${iconFile}" width="16" height="16" style="vertical-align:middle;margin-right:4px">${skill.name}</a></td>
                 <td align="right">${rank}</td>
                 <td align="right">${stat ? stat.level.toLocaleString() : '-'}</td>
                 <td align="right">${stat ? formatPlaytime(stat.playtime) : '-'}</td>
@@ -356,9 +357,10 @@ export async function handleHiscoresPage(url: URL): Promise<Response | null> {
     const currentCategory = category === -1 ? 0 : category;
 
     // Build skill links for sidebar
-    const skillLinks = skillOptions.map(s =>
-        `<tr><td><a href="/hiscores?category=${s.id}&profile=${profile}" class="c">${s.name}</a></td></tr>`
-    ).join('\n')
+    const skillLinks = skillOptions.map(s => {
+        const icon = s.name === 'Overall' ? '' : `<img src="/img/skill/${s.name.toLowerCase()}.png" width="15" height="15" style="vertical-align:middle;margin-right:3px">`;
+        return `<tr><td><a href="/hiscores?category=${s.id}&profile=${profile}" class="c">${icon}${s.name}</a></td></tr>`;
+    }).join('\n')
         + `\n<tr><td>&nbsp;</td></tr>\n<tr><td><a href="/hiscores/outfit?profile=${profile}" class="c text-orange">Equipment</a></td></tr>`;
 
     // Build data rows
@@ -642,9 +644,10 @@ export async function handleHiscoresOutfitPage(url: URL): Promise<Response | nul
         { id: 0, name: 'Overall' },
         ...ENABLED_SKILLS.map(s => ({ id: s.id + 1, name: s.name }))
     ];
-    const skillLinks = skillOptions.map(s =>
-        `<tr><td><a href="/hiscores?category=${s.id}&profile=${profile}" class="c">${s.name}</a></td></tr>`
-    ).join('\n')
+    const skillLinks = skillOptions.map(s => {
+        const icon = s.name === 'Overall' ? '' : `<img src="/img/skill/${s.name.toLowerCase()}.png" width="15" height="15" style="vertical-align:middle;margin-right:3px">`;
+        return `<tr><td><a href="/hiscores?category=${s.id}&profile=${profile}" class="c">${icon}${s.name}</a></td></tr>`;
+    }).join('\n')
         + `\n<tr><td>&nbsp;</td></tr>\n<tr><td><a href="/hiscores/outfit?profile=${profile}" class="c text-orange">Equipment</a></td></tr>`;
 
     const html = `<!DOCTYPE html>
